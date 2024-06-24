@@ -1,0 +1,292 @@
+---
+title: "SCUBA Paper Scripts"
+output: html_document
+date: "2024-02-01"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(Seurat)
+library(SCUBA)
+library(magrittr)
+library(cowplot)
+library(ggplot2)
+```
+
+Set of scripts to be included in the SCUBA manuscript
+
+Uses the test datasets packaged with SCUBA. Include a note describing the origin in the paper.
+
+# Script 1: FetchData
+
+FetchData can fetch expression data, metadata, and reduction coordinates. The input syntax is nearly identical across supported object types, and the output format is identical. 
+
+The SingleCellExperiment FetchData method supports multimodal data, as with Seurat's FetchData. Data is retrieved from the modality in question (known as the "assay" in Seurat objects and "experiment" in SingleCellExperiment objects) by passing a "key" consisting of the name of the modality and an underscore before the gene/feature name. The key for SingleCellExperiment and anndata objects is always equal to the name of the modality in the object. 
+
+```{r}
+FetchData(
+    # Seurat object
+    AML_Seurat,
+    layer = "data",
+    vars =
+        c("rna_GAPDH",
+          # Feature from an alternate modality (surface protein in this case)
+          "ab_CD123-AB",
+          # Dimensional Reduction Coordinates
+          "UMAP_1",
+          "UMAP_2",
+          # Metadata
+          "condensed_cell_type"
+          )
+    ) %>% 
+    head(5)
+```
+
+```{r}
+FetchData(
+    # SingleCellExperiment reference object 
+    AML_SCE(),
+    layer = "logcounts",
+    vars =
+        # Modality "key" varies slightly, but the key is passed via an 
+        # underscore
+        c("RNA_GAPDH",
+          # Feature from the surface protein (AB) modality
+          "AB_CD123-AB",
+          # Dimensional Reduction Coordinates
+          "UMAP_1",
+          "UMAP_2",
+          # Metadata
+          "condensed_cell_type"
+          )
+        ) %>% 
+        head(5)
+```
+
+```{r}
+FetchData(
+    # Anndata reference object 
+    AML_h5ad(),
+    layer = "test",
+    vars =
+        c("X_GAPDH",
+          # Feature from surface protein modality
+          "protein_CD123-AB",
+          # Dimensional Reduction Coordinates
+          "X_umap_1",
+          "X_umap_2",
+          # Metadata
+          "condensed_cell_type"
+          )
+        ) %>% 
+        head(5)
+```
+
+# Script 2: fetch_reduction, fetch_metadata
+
+SCUBA also includes S3 generics and methods specific to the retrieval of metadata and reduction coordinates, which are faster than retrieving the same data via FetchData for large objects.
+
+```{r}
+fetch_metadata(
+      AML_Seurat, 
+      vars = "condensed_cell_type"
+      ) %>% 
+    head(5)
+```
+
+```{r}
+fetch_metadata(
+      AML_SCE(), 
+      vars = "condensed_cell_type"
+      ) %>% 
+    head(5)
+```
+
+```{r}
+fetch_metadata(
+      AML_h5ad(), 
+      vars = "condensed_cell_type"
+      ) %>% 
+    head(5)
+```
+
+For fetch reduction, a reduction and a vector of dims to return is passed, along with the cells for which to return data. The utility methods `default_reduction` and `get_all_cells` can used to return defaults for the reduction and cells, respectively.
+
+```{r}
+fetch_reduction(
+      AML_Seurat,
+      dims = c(1, 2), 
+      # default_reduction: returns the "default" reduction 
+      reduction = SCUBA::default_reduction(AML_Seurat), 
+      # get_all_cells: utility function to return all cells in the object
+      cells = SCUBA::get_all_cells(AML_Seurat)
+  ) %>% 
+    head(5)
+```
+
+```{r}
+fetch_reduction(
+      AML_SCE(),
+      dims = c(1, 2), 
+      # default_reduction: returns the "default" reduction 
+      reduction = SCUBA::default_reduction(AML_SCE()), 
+      # get_all_cells: utility function to return all cells in the object
+      cells = SCUBA::get_all_cells(AML_SCE())
+  ) %>% 
+    head(5)
+```
+
+```{r}
+fetch_reduction(
+      AML_h5ad(),
+      dims = c(1, 2), 
+      # default_reduction: returns the "default" reduction 
+      reduction = SCUBA::default_reduction(AML_h5ad()), 
+      # get_all_cells: utility function to return all cells in the object
+      cells = SCUBA::get_all_cells(AML_h5ad())
+  ) %>% 
+    head(5)
+```
+
+
+common parameters
+
+- vars/reduction
+- cells
+
+# Script 3: plotting using output of accession functions
+
+The outputs of the FetchData methods allow for consistent visuals across input types. Below, plots are formed using Seurat and anndata objects
+
+```{r}
+# Fetch expression data, and cell types for each cell
+data <- 
+    FetchData(
+        AML_h5ad(),
+        vars = c("X_GAPDH",
+                 "condensed_cell_type"
+                 )
+        )
+
+plot <- ggplot(
+    data = data,
+    aes(x = X_GAPDH, fill = condensed_cell_type)
+    ) +
+    geom_density() +
+    ggplot2::facet_wrap(
+        vars(condensed_cell_type),
+        ncol = 2
+    ) +
+    cowplot::theme_cowplot() +
+    theme(
+        legend.position = "none", 
+        strip.background = element_rect(fill = "#FFFFFF00"),
+        strip.text = element_text(face = "bold", size = rel(0.8))
+        )
+
+# Save SVG file for publication
+ggplot2::ggsave(
+  filename = "./SCUBA_fig5_plot.svg",
+  plot = plot, 
+  bg = "#FFFFFF",
+  device = "svg",
+  width = 145,
+  height = 70,
+  units = "mm",
+  dpi = 300
+)
+
+svglite::svglite(
+  filename = "./SCUBA_fig5_plot_9x6.svg",
+  width = 9,
+  height = 6,
+  bg = "#FFFFFF"
+  )
+plot
+dev.off()
+
+pdf(
+  file = "./SCUBA_fig5_large.pdf",
+  width = 6,
+  height = 6,
+  bg = "#FFFFFF"
+  )
+plot
+dev.off()
+```
+
+```{r}
+data <- 
+    FetchData(
+        # Seurat object
+        AML_Seurat,
+        vars = c("rna_GAPDH",
+                 "condensed_cell_type"
+                 )
+        )
+
+ggplot(
+    data = data,
+    aes(x = rna_GAPDH, fill = condensed_cell_type)
+    ) +
+    geom_density() +
+    ggplot2::facet_wrap(
+        vars(condensed_cell_type),
+        ncol = 2
+    ) +
+    cowplot::theme_cowplot() +
+    theme(
+        legend.position = "none", 
+        strip.background = element_rect(fill = "#FFFFFF00"),
+        strip.text = element_text(face = "bold", size = rel(0.8))
+        )
+```
+
+# Script 4: 
+
+```{r}
+SCUBA::meta_varnames(
+    object = AML_h5ad()
+    )
+```
+
+```{r}
+# meta_varnames
+# Equivalent code per object without SCUBA
+# For Seurat objects
+AML_Seurat@meta.data %>% 
+    colnames()
+
+# For SingleCellExperiment objects
+SingleCellExperiment::colData(AML_SCE()) %>% 
+    colnames()
+
+# For anndata objects
+AML_h5ad()$obs_keys()
+```
+
+
+```{r}
+SCUBA::unique_values(
+    object = AML_h5ad(),
+    var = "condensed_cell_type"
+    )
+```
+
+```{r}
+# Equivalent code without SCUBA
+# Seurat objects
+AML_Seurat$condensed_cell_type %>% 
+    unique()
+
+# 
+SingleCellExperiment::colData(AML_SCE())[["condensed_cell_type"]] %>% 
+    unique()
+
+AML_h5ad()$obs[["condensed_cell_type"]] %>% 
+    unique()
+```
+
