@@ -1,0 +1,326 @@
+---
+title: "Test_object_generation"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This script contains code used in generating the example datasets used for demonstration in the manuscript (`AML_Seurat`, `AML_SCE`, and `AML_h5ad()`) from the Triana et al. (2021) AML reference dataset (https://doi.org/10.1038/s41590-021-01059-0).
+
+## Download source data
+
+To download the source data for this script, go to https://figshare.com/articles/dataset/Expression_of_197_surface_markers_and_462_mRNAs_in_15281_cells_from_blood_and_bone_marrow_from_a_young_healthy_donor/13398065/2, and press "Download". Please ensure that "Version 2" is selected. 
+
+## Set up reticulate, Python environment
+
+To create `AML_h5ad()`, the reticulate package must be installed, and a Python environment must be initialized with the following packages:
+
+- Numpy
+- Scipy
+- Pandas
+- AnnData
+
+For more information, see https://github.com/amc-heme/SCUBA?tab=readme-ov-file#pre-requisites.
+
+```{r, warning=FALSE, message=FALSE}
+library(Seurat)
+library(SingleCellExperiment)
+library(reticulate)
+library(anndata)
+library(HDF5Array)
+library(ggplot2)
+library(dplyr)
+# devtools::install_github("cellgeni/sceasy")
+library(sceasy)
+
+# Replace with path to the downloaded dataset
+sobj <- 
+  readRDS(
+    "200AB_projected_v2.rds"
+    )
+```
+ 
+## Add PCA and UMAP reductions
+
+PCA and UMAP reductions do not exist in this object. To create a format suitable for demonstration in SCUBA, these are created below.
+
+```{r, warning=FALSE, message=FALSE}
+# Change default asssay to RNA (so "BOTH" can be removed)
+DefaultAssay(sobj) <- "RNA"
+
+# Remove BOTH assay
+sobj[["BOTH"]] <- NULL
+
+# Normalization
+sobj <-
+  NormalizeData(
+    object = sobj
+    )
+
+# Variable feature selection (will be all features, due to the 
+# limited panel)
+sobj <-
+  FindVariableFeatures(
+    sobj
+  )
+
+# Scale data
+sobj <-
+  ScaleData(sobj)
+
+# PCA reduction
+sobj <-
+  RunPCA(
+    sobj
+  )
+
+# Clustering, UMAP reduction
+sobj <- FindNeighbors(sobj, dims = 1:10)
+sobj <- FindClusters(sobj, resolution = 0.4)
+sobj <- RunUMAP(sobj, dims = 1:10)
+```
+
+## Create lower-resolution cell type variable
+
+The `ct` metadata variable contains high resolution cell type assignments based on the combined gene and antibody modalities. For the sake of simplicity and demonstration, the 38 cell types assigned in `ct` will be condensed to 10 cell types. 
+
+```{r}
+sobj@meta.data$condensed_cell_type <-
+  case_when(
+    sobj@meta.data$ct %in% 
+      c("Early erythroid progenitor", 
+        "Late erythroid progenitor",
+        "Aberrant erythroid",
+        "Eosinophil-basophil-mast cell progenitors",
+        "Erythro-myeloid progenitors",
+        "Megakaryocyte progenitors"
+        ) ~ "Erythroid progenitors",
+    
+    sobj@meta.data$ct %in% 
+      c("pro-B cells", 
+        "Pre-pro-B cells",
+        "Small pre-B cell") ~ "pro-B cells",
+    
+    sobj@meta.data$ct %in% 
+      c("Conventional dendritic cell 1", 
+        "Conventional dendritic cell 2", 
+        "Dendritic-like blasts") ~ "Dendritic cells",
+    
+    sobj@meta.data$ct %in% 
+      c("Plasmacytoid dendritic cell progenitors", 
+        "Plasmacytoid dendritic cells") ~ "Plasmacytoid dendritic cells",
+    
+    sobj@meta.data$ct %in% 
+      c("Lymphomyeloid prog",
+        "Early promyelocytes",
+        "Late promyelocytes",
+        "Pre-B cells",
+        "Pro-B cells" 
+        ) ~ "Lymphomyeloid Progenitors",
+    
+    sobj@meta.data$ct %in% 
+      c("CD8+ central memory T cells", 
+        "CD8+CD103+ tissue resident memory T cells", 
+        "CD8+ naive T cells", 
+        "CD8+ effector memory T cells",
+        "GammaDelta T cells") ~ "CD8+ T Cells",
+    
+    sobj@meta.data$ct %in% 
+      c("Nonswitched memory B cells", 
+        "Mature naive B cells", 
+        "Class switched memory B cells", 
+        "CD11c+ memory B cells", 
+        "Immature B cells"
+        ) ~ "B Cells",
+    
+    sobj@meta.data$ct %in% 
+      c("CD4+ cytotoxic T cells", 
+        "CD4+ memory T cells", 
+        "CD4+ naive T cells",
+        "CD69+PD-1+ memory CD4+ T cells",
+        "Naive CD4+T cells") ~ "CD4+ T Cells",
+    
+    sobj@meta.data$ct %in% c(
+      "CD56dimCD16+ NK cells", 
+      "CD16+CD56dim NK cells", 
+      "CD56brightCD16- NK cells", 
+      "NK T cells") ~ "NK Cells",
+    
+    # Monocytic cluster
+    sobj@meta.data$ct %in% c(
+      "Non-classical monocytes",
+      "Classical Monocytes",
+      "Myelocytes",
+      "Monocyte-like blasts" 
+    ) ~ "Monocytes",
+    
+    # Primitive cell cluster
+    sobj@meta.data$ct %in% c(
+      "Promyelocytes",
+      "Early Promyelocytes",
+      "Late Promyelocytes",
+      "Myeloblasts",
+      "Lymphoid-primed multipotent progenitors",
+      "NK cell progenitors",
+      "HSCs & MPPs",
+      "Erythro-myeloid progenitors",
+      "Immature-like blasts",
+      "Mesenchymal cells_1"
+    ) ~ "Primitive",
+    
+    # If the cell type does not match any of the groups above, use the 
+    # current name (value of sobj$ct for the current cell)
+    TRUE ~ sobj@meta.data$ct
+    )
+
+# Collapse Erythroid and lymphomyeloid progenitors into the primitive cluster
+sobj@meta.data$condensed_cell_type <-
+  case_when(
+    # Primitive cell cluster
+    sobj@meta.data$condensed_cell_type %in% c(
+      "Lymphomyeloid Progenitors",
+      "Erythroid progenitors"
+    ) ~ "Primitive",
+    
+    # If the cell type does not match any of the groups above, use the 
+    # current name (value of cell_type for the current cell)
+    TRUE ~ sobj@meta.data$condensed_cell_type
+    )
+```
+
+##### Breaking up of "Monocyte" cluster
+
+The monocyte cluster appears to cluster separately between peripheral bone marrow samples, and blood samples (as shown below, using the `Batch` variable). For demonstration in SCUBA, we split this cluster into PBMC monocytes and bone marrow monocytes. 
+
+```{r}
+Seurat::DimPlot(
+  sobj, 
+  reduction = "umap", 
+  group.by = "condensed_cell_type",
+  split.by = "Batch"
+  ) +
+  theme(
+    # Size of legend text
+      legend.text = element_text(size = 8),
+      # Change the spacing between the points (keys) in legend and the text
+      legend.key.size = unit(0.5, "points"),
+      legend.position = "right"
+      ) +
+  guides(
+      color = 
+        guide_legend(
+          override.aes = list(size = 2),
+          # Number of columns in legend
+          ncol = 1
+          )
+      )
+```
+
+```{r}
+# Split monocytes cluster based on tissue type (via "Batch")
+sobj@meta.data$condensed_cell_type <-
+  case_when(
+    sobj@meta.data$condensed_cell_type == "Monocytes" & 
+      sobj@meta.data$Batch == "BM_200AB" ~ "BM Monocytes",
+    sobj@meta.data$condensed_cell_type == "Monocytes" & 
+      sobj@meta.data$Batch == "PBMC_200AB" ~ "PBMC Monocytes",
+    TRUE ~ sobj@meta.data$condensed_cell_type
+  )
+
+# Visualize result
+Seurat::DimPlot(
+  sobj, 
+  reduction = "umap", 
+  group.by = "condensed_cell_type",
+  split.by = "Batch"
+  ) +
+  theme(
+    # Size of legend text
+    legend.text = element_text(size = 8),
+    # Change the spacing between the points (keys) in legend and the text
+    legend.key.size = unit(0.5, "points"),
+    legend.position = "right"
+    ) +
+  guides(
+    color = 
+      guide_legend(
+        override.aes = list(size = 2),
+        # Number of columns in legend
+        ncol = 1
+        )
+    )
+```
+
+## Downsampling
+
+At this point, the object has sufficient reductions and cell type metadata at a resolution manageable for demonstration. Additionally, the objects used for demonstrated in the SCUBA manuscript were slimmed down to a size of several megabytes, so they could be included directly in the SCUBA repo as test datasets. This was done below via downsampling.
+
+```{r}
+set.seed(325)
+
+# Subset while downsampling on condensed_cell_type
+AML_Seurat <- 
+  subset(
+    SetIdent(sobj, value = "condensed_cell_type"),
+    downsample = 25
+    ) 
+```
+
+## Generation of SingleCellExperiment, anndata objects
+
+To demonstrate the input flexibility of SCUBA, the downsampled dataset was converted to anndata and SingleCellExperiment formats.
+
+```{r}
+# Convert object to SCE format
+AML_sce <- as.SingleCellExperiment(AML_Seurat, assay = "RNA")
+AML_sce_ab <- as.SingleCellExperiment(AML_Seurat, assay = "AB")
+
+altExps(AML_sce) <- list("AB" = AML_sce_ab)
+
+# The code below was used to save the object using HDF5 storage. While the
+# benefits of this are not realized with a small dataset like this one, 
+# RAM consumption can be considerably decreased for large datasets. The usage
+# of SCUBA does not differ 
+# saveHDF5SummarizedExperiment(
+#   AML_sce, 
+#   dir = "AML_sce"
+#   )
+# 
+# AML_sce <- loadHDF5SummarizedExperiment(
+#   dir = "AML_sce"
+# )
+```
+
+```{r}
+# Convert RNA modality first, then add AB modality
+AML_h5ad <- 
+  sceasy::convertFormat(
+    AML_Seurat,
+    from = "seurat",
+    to = "anndata",
+    main_layer = "data",
+    drop_single_values = FALSE
+    )
+
+AB_modality <-
+    sceasy::convertFormat(
+      AML_Seurat,
+      from = "seurat",
+      to = "anndata",
+      main_layer = "data",
+      assay = "AB",
+      drop_single_values = FALSE
+    )
+
+# Append the object created for the AB modality as a matrix
+# By convention, additional modalities are stored in the obsm slot.
+# Modalities must be stored in the obsm slot to be accessed by SCUBA.
+# AB/ADT modalities are also named "protein" by convention, but this is 
+# not required for SCUBA access.
+AML_h5ad$obsm[["protein"]] <- AB_modality$to_df()
+```
+
