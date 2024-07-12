@@ -1,0 +1,157 @@
+---
+title: "Figure 3"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(Seurat)
+library(SCUBA)
+library(magrittr)
+library(cowplot)
+library(ggplot2)
+library(dplyr)
+library(SingleCellExperiment)
+library(reticulate)
+library(anndata)
+```
+
+The Rmd below contains a working example of the code shown in **Figure 3** of the SCUBA manuscript. For instructions on generating the `AML_Seurat`, `AML_SCE`, and `AML_h5ad()` datasets, see "Demo_Object_Generation.Rmd".
+
+An example of the `fetch_metadata` and `fetch_reduction` methods added by SCUBA is given below for all supported object types. The data returned by each is the same as returning metadata and reductions via FetchData, respectively. In many cases, the functions offer decreased run time versus FetchData in objects with large numbers of cells.
+
+## Metadata retrieval via `fetch_metadata`
+
+The `condensed_cell_type` metadata variable created in "Demo_Object_Generation.Rmd" is used as an example. Any other metadata variable in the object may be used instead. To view available metadata, use `SCUBA::meta_varnames(object)`.
+
+##### Seurat method
+
+```{r}
+fetch_metadata(
+  AML_Seurat,
+  vars = "condensed_cell_type"
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+##### SingleCellExperiment method
+
+```{r}
+fetch_metadata(
+  AML_SCE(),
+  vars = "condensed_cell_type"
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+##### anndata method
+
+```{r}
+fetch_metadata(
+  AML_h5ad(),
+  vars = "condensed_cell_type"
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+## Reduction coordinate retrieval via `fetch_reduction`
+
+The `fetch_reduction` method retrieves reduction coordinates for the requested dimensions (`dims`) in the requested reduction (`reduction`). Two integer values are passed to `dims` to retrieve coordinates for the corresponding dimensions. In nearly all cases, `dims` will be `1` and `2`, but fetching other dimensions may be useful in some cases. For `reduction`, SCUBA provides the convenience function `default_reduction`, which will direct `fetch_reduction` to use the UMAP reduction, the t-SNE reduction if the UMAP reduction is not provided, or the PCA function if the t-SNE reduction is not provided. Any reduction may be passed to `reduction` as a single-length character vector, as it appears in the object (see examples below). 
+
+##### Seurat method
+
+```{r}
+fetch_reduction(
+  AML_Seurat,
+  dims = c(1, 2), 
+  # reduction: default_reduction, or a reduction from names(object@reductions)
+  reduction = SCUBA::default_reduction(AML_Seurat), 
+  cells = SCUBA::get_all_cells(AML_Seurat)
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+
+# Pulling PCA coordinates
+# Look for name of PCA in object
+names(AML_Seurat@reductions)
+
+fetch_reduction(
+  AML_Seurat,
+  dims = c(1, 2), 
+  reduction = "pca", 
+  cells = SCUBA::get_all_cells(AML_Seurat)
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+##### SingleCellExperiment method
+
+```{r}
+fetch_reduction(
+  AML_SCE(),
+  dims = c(1, 2), 
+  # reduction: default_reduction, or a reduction from reducedDimNames(object)
+  reduction = SCUBA::default_reduction(AML_SCE()), 
+  cells = SCUBA::get_all_cells(AML_SCE())
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+
+# Pulling PCA coordinates
+# Look for name of PCA in object
+reducedDimNames(AML_SCE())
+
+fetch_reduction(
+  AML_SCE(),
+  dims = c(1, 2), 
+  reduction = "PCA", 
+  cells = SCUBA::get_all_cells(AML_Seurat)
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+##### anndata method
+
+```{r}
+fetch_reduction(
+  AML_h5ad(),
+  dims = c(1, 2), 
+  # reduction: default_reduction, or a reduction from object$obsm_keys()
+  reduction = SCUBA::default_reduction(AML_h5ad()), 
+  cells = SCUBA::get_all_cells(AML_h5ad())
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+
+# Pulling PCA coordinates
+# Look for name of PCA in object
+AML_h5ad()$obsm_keys()
+
+fetch_reduction(
+  AML_h5ad(),
+  dims = c(1, 2), 
+  reduction = "X_pca", 
+  cells = SCUBA::get_all_cells(AML_Seurat)
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
