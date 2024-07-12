@@ -1,0 +1,193 @@
+---
+title: "Figure 2"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(Seurat)
+library(SCUBA)
+library(magrittr)
+library(cowplot)
+library(ggplot2)
+library(dplyr)
+library(SingleCellExperiment)
+library(reticulate)
+library(anndata)
+```
+
+The Rmd below contains a working example of the code shown in **Figure 2** of the SCUBA manuscript. For instructions on generating the `AML_Seurat`, `AML_SCE`, and `AML_h5ad()` datasets, see "Demo_Object_Generation.Rmd".
+
+For each of the three data types below, an example of the existing Seruat FetchData method is given alongside examples of the FetchData methods added by SCUBA for SingleCellExperiment and anndata objects.
+
+## Expression Data
+
+Below, there are some differences in the inputs for FetchData, namely the conventions used for entering feature names, and the entries for the `layer` parameter. In the same manner as Seurat's FetchData, features are entered using a "key" before the feature name with the name of the assay/modality and an underscore (here, the key for the Seruat object is "rna\_", the key for the SingleCellExperiment object is "RNA\_", and the key for the anndata object is "X\_" ("X" is the convention for naming the main modality in anndata objects)). The `layer` parameter is used to select counts, normalized counts, scaled counts etc., and the naming conventions for each of these vary between object classes. Most often, normalized counts is used for plotting. In Seurat objects, this is called "data". In SingleCellExperiment objects, this layer is called "logcounts" by convention but may be named differently when the object is set up. In anndata objects, normalized counts is the default layer by convention, and is accessed in SCUBA by using `layer = NULL`. The default layer may be changed when setting up the object, however.
+
+##### Existing Seurat FetchData method 
+
+```{r}
+FetchData(
+  AML_Seurat,
+  #layer = "data",
+  vars = 
+    c(
+      # Example gene ("RNA" modality)
+      "rna_GAPDH",
+      # Example Surface protein ("AB" modality)
+      "ab_CD123-AB"
+      )
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+##### SingleCellExperiment FetchData method added by SCUBA
+
+```{r}
+FetchData(
+  AML_SCE(),
+  #layer = "data",
+  vars = 
+    c(
+      # Example gene ("RNA" modality)
+      "RNA_GAPDH",
+      # Example Surface protein ("AB" modality)
+      "AB_CD123-AB"
+      )
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+##### anndata FetchData method added by SCUBA
+
+```{r}
+FetchData(
+  AML_h5ad(),
+  #layer = NULL,
+  vars = 
+    c(
+      # Example gene ("RNA" modality)
+      "X_GAPDH",
+      # Example Surface protein ("AB" modality)
+      "protein_CD123-AB"
+      )
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+## Metadata
+
+The `condensed_cell_type` variable created in "Demo_Object_Generation.Rmd" is used as an example. Any other metadata variable in the object may be used instead. To view available metadata, use `SCUBA::meta_varnames(object)`.
+
+##### Existing Seurat FetchData method 
+
+```{r}
+FetchData(
+  AML_Seurat,
+  var = "condensed_cell_type"
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+##### SingleCellExperiment FetchData method added by SCUBA
+
+```{r}
+FetchData(
+  AML_SCE(),
+  var = "condensed_cell_type"
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+##### anndata FetchData method added by SCUBA
+
+```{r}
+FetchData(
+  AML_h5ad(),
+  var = "condensed_cell_type"
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+## Reduction Coordinates
+
+Reduction coordinates are entered using the same conventions used in Seurat's FetchData method. The key of the reduction is entered, followed by an integer giving the desired dimensions of the reduction to return. In nearly all cases, this will be `1` and `2`, but in some situations it may be desirable to explore the clustering of cells in subsequent dimensions of a reduction.
+
+For Seurat objects, the "key" to use is the result of running `Key()` on the desired reduction, in this case the UAMP (see example below).
+
+```{r}
+# Example of the "key" for Seurat objects
+Key(AML_Seurat@reductions$umap)
+
+FetchData(
+  AML_Seurat,
+  # To form the "key", add an underscore to the key returned from Key() 
+  var = c(
+    "UMAP_1",
+    "UMAP_2"
+    )
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+##### SingleCellExperiment FetchData method added by SCUBA
+
+For SingleCellExperiments, the "key" is equal to the name of the reduction, as it appears in `reducedDimNames(object)`, with an underscore added. For the UMAP reduction, in this object it is "UAMP_".
+
+```{r}
+# Search for key to use
+reducedDimNames(AML_SCE())
+
+FetchData(
+  AML_SCE(),
+  # To form the "key", add an underscore to the name of the UAMP projection as 
+  # listed in reducedDimNames.
+  var = c(
+    "UMAP_1",
+    "UMAP_2"
+    )
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```
+
+##### anndata FetchData method added by SCUBA
+
+For anndata objects, the "key" is equal to the name of the reduction, as it appears in `object$obsm_keys()`. By convention, reductions in obsm are named with "X_", and the name of the reduction in lowercase letters. For the UMAP reduction in this object it is "X_umap".
+
+```{r}
+AML_h5ad()$obsm_keys()
+
+FetchData(
+  AML_h5ad(),
+  # To form the "key", add an underscore to the name of the UAMP projection as 
+  # listed in obsm_keys()
+  var = c(
+    "X_umap_1",
+    "X_umap_2"
+    )
+  ) %>% 
+  # Prints summary of data.frame returned. This is for viewing only and 
+  # should be removed before performing subsequent operations on the data
+  str()
+```

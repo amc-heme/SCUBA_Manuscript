@@ -16,13 +16,12 @@ library(magrittr)
 library(cowplot)
 library(ggplot2)
 library(dplyr)
-
 library(SingleCellExperiment)
 library(reticulate)
 library(anndata)
 ```
 
-The Rmd below contains code for generating **Figure 6** in the SCUBA manuscript. For instructions on generating the `AML_Seurat`, `AML_SCE`, and `AML_h5ad()` datasets, see "Demo_Object_Generation.Rmd".
+The Rmd below contains a working example of the code shown in **Figure 6** of the SCUBA manuscript. For instructions on generating the `AML_Seurat`, `AML_SCE`, and `AML_h5ad()` datasets, see "Demo_Object_Generation.Rmd".
 
 ## SCUBA simplifies common object exploration methods 
 

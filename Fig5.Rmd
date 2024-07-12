@@ -29,7 +29,7 @@ data_Seurat <-
   FetchData(
     # Seurat object
     AML_Seurat,
-    slot = "data",
+    # layer = "data",
     vars = c("rna_GAPDH",
              "condensed_cell_type"
              )
@@ -40,7 +40,7 @@ data_SCE <-
   FetchData(
     # Seurat object
     AML_SCE(),
-    slot = "logcounts",
+    # layer = "logcounts",
     vars = c("RNA_GAPDH",
              "condensed_cell_type"
              )
@@ -50,6 +50,10 @@ data_SCE <-
 data_h5ad <- 
   FetchData(
     AML_h5ad(),
+    # When layer is NULL, the default layer is pulled. By convention, this is 
+    # normalized counts ("data" in Seurat), but this varies based on how the
+    # object was created. 
+    # layer = NULL,
     vars = c("X_GAPDH",
              "condensed_cell_type"
              )
@@ -57,7 +61,7 @@ data_h5ad <-
   dplyr::rename("GAPDH" = "X_GAPDH")
 ```
 
-The only differences in the inputs to FetchData are in the formatting used for entering feature names, and the `layer` parameter. In the same manner as Seurat's FetchData, features are entered using a "key" before the feature name with the name of the assay/modality and an underscore (here, the key for the Seruat object is "rna\_", the key for the SingleCellExperiment object is "RNA\_", and the key for the anndata object is "X\_" ("X" is the convention for naming the main modality in anndata objects)). Above, the assay key was removed from each feature before plotting. This was done for demonstration purposes and is not necessary to do after fetching data with SCUBA.  
+The only differences in the inputs to FetchData are in the formatting used for entering feature names, and the `layer` parameter. In the same manner as Seurat's FetchData, features are entered using a "key" before the feature name with the name of the assay/modality and an underscore (here, the key for the Seruat object is "rna\_", the key for the SingleCellExperiment object is "RNA\_", and the key for the anndata object is "X\_" ("X" is the convention for naming the main modality in anndata objects)). Above, the assay key was removed from each feature before plotting. This was done for demonstration purposes and is not necessary to do after fetching data with SCUBA. The `layer` parameter is used to select counts, normalized counts, scaled counts etc., and the naming conventions for each of these vary between object classes. Most often, normalized counts is used for plotting. In Seurat objects, this is called "data". In SingleCellExperiment objects, this layer is called "logcounts" by convention but may be named differently when the object is set up. In anndata objects, normalized counts is the default layer by convention, and is accessed in SCUBA by using `layer = NULL`. The default layer may be changed when setting up the object, however. 
 
 ## Plotting
 
