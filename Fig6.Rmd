@@ -1,0 +1,62 @@
+---
+title: "Figure 6"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(Seurat)
+library(SCUBA)
+library(magrittr)
+library(cowplot)
+library(ggplot2)
+library(dplyr)
+
+library(SingleCellExperiment)
+library(reticulate)
+library(anndata)
+```
+
+The Rmd below contains code for generating **Figure 6** in the SCUBA manuscript. For instructions on generating the `AML_Seurat`, `AML_SCE`, and `AML_h5ad()` datasets, see "Demo_Object_Generation.Rmd".
+
+## SCUBA simplifies common object exploration methods 
+
+Below is a simple example operation using SCUBA: the identification of all unique values of a metadata variable represetned in the object. The process using SCUBA is compared to the most efficient equivalents for each object type.
+
+### With SCUBA
+
+```{r}
+SCUBA::fetch_metadata(
+  # May replace this with `AML_SCE()` or `AML_h5ad()` with no change in results
+  AML_Seurat,
+  # var is set to a metadata variable in the object.
+  # To view available metadata, use SCUBA::meta_varnames().
+  var = "condensed_cell_type"
+  ) %>% 
+  unique()
+```
+
+### Most efficient equivalents
+
+Below are the most efficient equivalent operations for each object. Compared to SCUBA, these operations require the memorization of different functions for each object class, and require knowledge of each object structure to perform correctly.
+
+```{r}
+# Seurat objects
+AML_Seurat$condensed_cell_type %>% 
+  unique()
+
+# SingleCellExperiment objects
+colData(AML_SCE())$condensed_cell_type %>% 
+  unique()
+
+# anndata objects
+AML_h5ad()$obs$condensed_cell_type %>% 
+  unique()
+```
+
+

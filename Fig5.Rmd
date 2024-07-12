@@ -1,0 +1,138 @@
+---
+title: "Figure 5"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(Seurat)
+library(SCUBA)
+library(magrittr)
+library(cowplot)
+library(ggplot2)
+library(dplyr)
+```
+
+The Rmd below contains code for generating **Figure 5** in the SCUBA manuscript. For instructions on generating the `AML_Seurat`, `AML_SCE`, and `AML_h5ad()` datasets, see "Demo_Object_Generation.Rmd".
+
+## Generation of data for plotting
+
+Below, the data for plotting is generated from each of the three demonstration objects.
+
+```{r}
+data_Seurat <- 
+  FetchData(
+    # Seurat object
+    AML_Seurat,
+    slot = "data",
+    vars = c("rna_GAPDH",
+             "condensed_cell_type"
+             )
+    ) %>% 
+  dplyr::rename("GAPDH" = "rna_GAPDH")
+
+data_SCE <- 
+  FetchData(
+    # Seurat object
+    AML_SCE(),
+    slot = "logcounts",
+    vars = c("RNA_GAPDH",
+             "condensed_cell_type"
+             )
+    ) %>% 
+  dplyr::rename("GAPDH" = "RNA_GAPDH")
+
+data_h5ad <- 
+  FetchData(
+    AML_h5ad(),
+    vars = c("X_GAPDH",
+             "condensed_cell_type"
+             )
+    ) %>% 
+  dplyr::rename("GAPDH" = "X_GAPDH")
+```
+
+The only differences in the inputs to FetchData are in the formatting used for entering feature names, and the `layer` parameter. In the same manner as Seurat's FetchData, features are entered using a "key" before the feature name with the name of the assay/modality and an underscore (here, the key for the Seruat object is "rna\_", the key for the SingleCellExperiment object is "RNA\_", and the key for the anndata object is "X\_" ("X" is the convention for naming the main modality in anndata objects)). Above, the assay key was removed from each feature before plotting. This was done for demonstration purposes and is not necessary to do after fetching data with SCUBA.  
+
+## Plotting
+
+Knit this markdown to compare the plots produced from each of the three objects. There are no differences in the plot output between the input classes.
+
+```{r}
+objects <- 
+  list(
+    "Seurat" = data_Seurat,
+    "SingleCellExperiment" = data_SCE,
+    "anndata" = data_h5ad
+  )
+
+for (i in 1:length(objects)){
+  plot <- ggplot(
+    data = objects[[i]],
+    aes(x = GAPDH, fill = condensed_cell_type)
+    ) +
+    geom_density() +
+    ggplot2::facet_wrap(
+        vars(condensed_cell_type),
+        ncol = 2
+    ) +
+    ggtitle(paste0('Plot from ', names(objects)[i], ' object')) +
+    cowplot::theme_cowplot() +
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "none", 
+        strip.background = element_rect(fill = "#FFFFFF00"),
+        strip.text = element_text(face = "bold", size = rel(0.8))
+        )
+    
+  print(plot)
+}
+```
+
+```{r}
+# Exact image of figure 5 
+plot <- ggplot(
+    data = objects[[1]],
+    aes(x = GAPDH, fill = condensed_cell_type)
+    ) +
+    geom_density() +
+    ggplot2::facet_wrap(
+        vars(condensed_cell_type),
+        ncol = 2
+    ) +
+    cowplot::theme_cowplot() +
+    theme(
+        legend.position = "none", 
+        strip.background = element_rect(fill = "#FFFFFF00"),
+        strip.text = element_text(face = "bold", size = rel(0.8))
+        )
+
+# Additional text sizing for manuscript
+plot <-
+  plot +
+  theme(
+    strip.text = element_text(size = 9),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 9)
+  )
+
+# The image in the manuscript is 120 x 120 mm.
+mm_to_in <- 
+  function(mm){
+    mm/25.4
+  }
+
+# pdf(
+#   file = "fig5.pdf",
+#   width = mm_to_in(120),
+#   height = mm_to_in(120),
+#   bg = "#FFFFFF"
+#   )
+# plot
+# dev.off()
+```
