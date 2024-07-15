@@ -1,0 +1,1660 @@
+---
+title: "SCUBA Manuscript Performance Plots"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
+---
+
+This Rmd contains the code used to generate the performance plots for the SCUBA manuscript.
+
+```{r}
+library(SCUBA)
+library(HDF5Array)
+library(Seurat)
+library(SingleCellExperiment)
+library(anndata)
+library(reticulate)
+
+library(dplyr)
+library(ggplot2)
+
+library(tictoc)
+library(cowplot)
+
+library(stringr)
+
+# Used to add gene symbols to objects downloaded from CELLxGENE
+# Feature names of CELLxGENE objects are ENSEMBL IDs by default
+library(biomaRt)
+
+library(sceasy)
+
+# Use cowplot ggplot2 theme by default
+theme_set(theme_cowplot())
+
+# Functions 
+# Removes grey background from facet labels, and bolds feature names
+facet_theme <- 
+  theme(
+    strip.background = element_rect(fill = "#FFFFFF00"), 
+    strip.text = element_text(face = "bold")
+    )
+
+working_dir <- "/mnt/filestore/jairav.desai/SCUBA_Performance_Testing/"
+```
+
+<!--This example will use the dataset from [Chan et al. 2021](https://www.cell.com/cancer-cell/fulltext/S1535-6108(21)00497-9#gr1). The dataset can be downloaded [here](https://cellxgene.cziscience.com/collections/62e8f058-9c37-48bc-9200-e767f318a8ec) (download the "Combined samples" dataset). -->
+
+For this exercise, I downloaded a larger dataset from CellXGene (the Human Brain atlas dataset):
+https://cellxgene.cziscience.com/collections/283d65eb-dd53-496d-adb7-7570c7caa443
+
+direct link: https://datasets.cellxgene.cziscience.com/9343817c-5c74-4548-a7d5-01990df5af7a.rds
+
+I used "all non-neuronal cells", and downloaded the dataset in Seruat format.
+
+```{r}
+# Load Seurat object
+sobj <- 
+    readRDS(
+      paste0(
+        working_dir,
+        "9343817c-5c74-4548-a7d5-01990df5af7a.rds"
+      )
+    )
+```
+
+Due to the very large size of this object, performance issues likely related to swap usage were observed during testing, which introduces a confounding factor when measuring performance. To control this, subsets were formed before testing and saved to disk, instead of being formed during testing with the full object still loaded. 
+
+The original code used for testing is at the bottom of this document, under the `Original Performance Testing Code` section.
+
+# Create Subsets 
+
+Subsets for Seurat objects
+
+```{r}
+# Set subset sizes to create, and number of randomized subsets per size
+subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000) |> as.integer()
+trials <- 1:5
+```
+
+
+```{r}
+# Form random subsets for testing
+for (subset_size in subset_sizes){
+    for (i in trials){
+        cat(subset_size, " cells, ", "trial ", i, sep = "")
+        
+        # Random subsetting
+        # Take a random sample of n cells per trial 
+        # (n will increment, to test scalability of performance)
+        subset <- 
+            sobj[, sample(x = 1:ncol(sobj), size = subset_size, replace = FALSE)]
+        
+        # Form filename for subset
+        subset_filename <- paste0(subset_size, "_", i, ".rds")
+        
+        # Save subset to disk
+        saveRDS(
+            subset, 
+            file = 
+                paste0(
+                  working_dir,
+                  "Random_subsets/Seurat/",
+                  subset_filename
+                )
+            )
+        cat("\r")
+    }
+}
+
+```
+
+SingleCellExperiment objects
+
+```{r}
+# Generate SCE object from each .Rds object from above code block
+for (subset_size in subset_sizes){
+    for (i in trials){ 
+        gc()
+        rds_path <- 
+            paste0(
+              working_dir,
+              "Random_subsets/Seurat/",
+              # as.integer to output 500000 instead of 5e+05
+              paste0(as.integer(subset_size), "_", i, ".rds")
+            )
+        
+        cat(
+            subset_size, 
+            " cells, ", 
+            "trial ", 
+            i, 
+            " load Seurat object ", 
+            rds_path, 
+            sep = ""
+            )
+         cat("\r")
+        
+        # Load Seurat object for the ith trial of the current subset size,
+        # and convert to an SCE object
+        sobj <- 
+            readRDS(
+                rds_path
+            )
+        
+        cat(subset_size, " cells, ", "trial ", i, " make SCE object", sep = "")
+        cat("\r")
+        
+        # Only one assay present
+        sce <- as.SingleCellExperiment(sobj, assay = "RNA")
+        
+        sce_path <- 
+            paste0(
+              working_dir,
+              "Random_subsets/SingleCellExperiment/",
+              paste0(as.integer(subset_size), "_", i)
+            )
+        
+        cat(
+            subset_size, 
+            " cells, ", 
+            "trial ", 
+            i, 
+            " save SCE object ", 
+            sce_path, 
+            sep = ""
+            )
+    
+        # Save in HDF5 format (use subset size and trial number)
+        saveHDF5SummarizedExperiment(
+          sce, 
+          dir = sce_path,
+          level = 3,
+          replace = TRUE
+          )
+        
+        cat("\r")
+        }
+    }
+
+
+
+```
+
+Creation of anndata objects 
+
+```{r}
+#subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000) |> as.integer()
+#subset_sizes <- 500000
+#trials <- 1:5
+
+# Generate SCE object from each .Rds object from above code block
+for (subset_size in subset_sizes){
+    for (i in trials){ 
+        rds_path <- 
+            paste0(
+              working_dir,
+              "Random_subsets/Seurat/",
+              # as.integer to output 500000 instead of 5e+05
+              paste0(as.integer(subset_size), "_", i, ".rds")
+            )
+        
+        cat(
+            subset_size, 
+            " cells, ", 
+            "trial ", 
+            i, 
+            " load Seurat object ", 
+            rds_path, 
+            sep = ""
+            )
+         cat("\r")
+        
+        # Load Seurat object for the ith trial of the current subset size,
+        # and convert to an SCE object
+        sobj <-
+          readRDS(
+            rds_path
+            )
+        
+        adata_path <- 
+          paste0(
+            working_dir,
+            "Random_subsets/anndata/",
+            paste0(as.integer(subset_size), "_", i, ".h5ad")
+            )
+        
+        cat(
+          subset_size, 
+          " cells, ", 
+          "trial ", 
+          i, 
+          " save Anndata object ", 
+          adata_path, 
+          sep = ""
+          )
+    
+        # Convert to anndata object and save
+        adata <- 
+          sceasy::convertFormat(
+            sobj, 
+            from = "seurat", 
+            to = "anndata",
+            drop_single_values = FALSE
+            )
+        
+        anndata::write_h5ad(
+          adata, 
+          filename = adata_path
+          )
+        
+        cat("\r")
+        }
+    }
+
+
+
+
+```
+
+# Performance testing of FetchData on subsets
+
+```{r}
+times <- c()
+n_cells <- c()
+
+# Seurat objects
+for (subset_size in subset_sizes){
+    # Run test for i trials per number of cells
+    for (i in trials){
+        # Display the current subset size and trial
+        cat("Subset size ", subset_size, ", trial ", i, sep = "")
+        
+        # Load random subset
+        subset <- 
+          readRDS(
+            paste0(
+              working_dir,
+              "Random_subsets/Seurat/",
+              paste0(as.integer(subset_size), "_", i, ".rds")
+            )
+          )
+        
+        # Run FetchData and time run with Sys.time()
+        start_time <- Sys.time()
+        
+        FetchData(
+            subset, 
+            # CellXGene displays feature names according to Ensembl ID.
+            # To avoid the hassle of transforming cell IDs to gene symbols, 
+            # I put a random gene symbol in GeneCards and used the corresponding
+            # ensembl ID as the target var.
+            vars = c("ENSG00000078399")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        # Also store the number of cells associated with the current trial
+        n_cells <- c(n_cells, subset_size)
+        # Carriage return, to avoid cluttering output during testing
+        cat("\r")
+    }
+}
+
+seurat_trial <-
+    data.frame(
+    `n_cells` = n_cells,
+    `run_time` = times
+    )
+
+seurat_trial$fxn <- "FetchData.Seurat"
+```
+
+```{r}
+# FetchData, SingleCellExperiment
+times <- c()
+n_cells <- c()
+
+for (subset_size in subset_sizes){
+    # Run test for i trials per number of cells
+    for (i in trials){
+        # Display the current subset size and trial
+        cat("Subset size ", subset_size, ", trial ", i, sep = "")
+        
+        # Load random subset
+        subset <- 
+          HDF5Array::loadHDF5SummarizedExperiment(
+            paste0(
+              working_dir,
+              "Random_subsets/SingleCellExperiment/",
+              paste0(as.integer(subset_size), "_", i)
+              )
+            )
+        
+        # Run FetchData and time run with Sys.time()
+        start_time <- Sys.time()
+        
+        FetchData(
+            subset, 
+            vars = c("ENSG00000078399")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        # Also store the number of cells associated with the current trial
+        n_cells <- c(n_cells, subset_size)
+        # Carriage return, to avoid cluttering output during testing
+        cat("\r")
+    }
+}
+
+sce_trial <-
+  data.frame(
+    `n_cells` = n_cells,
+    `run_time` = times
+  )
+
+sce_trial$fxn <- "FetchData.SingleCellExperiment"
+```
+
+```{r}
+# FetchData, anndata objects
+times <- c()
+n_cells <- c()
+
+for (subset_size in subset_sizes){
+    # Run test for i trials per number of cells
+    for (i in trials){
+        # Display the current subset size and trial
+        cat("Subset size ", subset_size, ", trial ", i, sep = "")
+        
+        # Load random subset
+        subset <- 
+          anndata::read_h5ad(
+            paste0(
+              working_dir,
+              "Random_subsets/anndata/",
+              paste0(as.integer(subset_size), "_", i, ".h5ad")
+            )
+          )
+        
+        # Run FetchData and time run with Sys.time()
+        start_time <- Sys.time()
+        
+        FetchData(
+            subset, 
+            vars = c("ENSG00000078399")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        # Also store the number of cells associated with the current trial
+        n_cells <- c(n_cells, subset_size)
+        # Carriage return, to avoid cluttering output during testing
+        cat("\r")
+        
+        rm(subset)
+        gc()
+    }
+}
+
+anndata_trial <-
+    data.frame(
+    `n_cells` = n_cells,
+    `run_time` = times
+    )
+
+anndata_trial$fxn <- "FetchData.AnnDataR6"
+
+```
+
+```{r}
+# Combine results for each object and save
+fetchdata_results <- rbind(seurat_trial, sce_trial, anndata_trial)
+
+results_dir <- paste0(working_dir, "performance_results/")
+
+if(!dir.exists(results_dir)) dir.create(results_dir)
+
+write.csv(
+  fetchdata_results, 
+  file = paste0(results_dir, "FetchData.csv"), 
+  row.names = FALSE
+)
+```
+
+### Plot
+
+```{r fetchData plot}
+results_df <- read.csv(paste0(working_dir, "performance_results/FetchData.csv"))
+
+# Rename function column lavels
+results_df$fxn <- 
+  plyr::revalue(
+    results_df$fxn, 
+    c("FetchData.Seurat" = "Seurat", 
+      "FetchData.SingleCellExperiment" = "SingleCellExperiment", 
+      "FetchData.AnnDataR6" = "anndata"
+      )
+    )
+
+# Re-factor
+results_df$fxn <- 
+  factor(
+    results_df$fxn, 
+    levels = 
+      c("Seurat",
+        "SingleCellExperiment",
+        "anndata"
+        )
+    )
+
+# Convert number of cells to character
+results_df$n_cells <-
+  as.character(
+    # Extract from scientific notation with as.integer
+    as.integer(results_df$n_cells)
+    )
+
+results_df$n_cells <- 
+  factor(
+    results_df$n_cells,
+    levels = 
+      as.character(
+        str_sort(
+          unique(results_df$n_cells), 
+          numeric = TRUE
+          )
+        )
+  )
+
+results_df <- results_df %>% rename(c("Method" = "fxn"))
+
+fetchData_comparison <- 
+  ggplot(data = results_df, aes(x = n_cells, y = run_time)) +
+  geom_boxplot(aes(color = Method)) +
+  scale_color_manual(
+    values = 
+      c("#880000", "#000088", "#B8AB2F"),
+    aesthetics = "color",
+    na.value = "grey50"
+    ) +
+  # labs(
+  #   title = "FetchData with a Single Gene", 
+  #   #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
+  #   ) +
+  xlab("Number of cells") +
+  ylab("Run Time (s)") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    plot.subtitle = element_text(hjust = 0.5),
+    #axis.title.y = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) #+
+  #coord_flip()
+
+fetchData_comparison
+```
+
+```{r save plot}
+ggsave(
+  fetchData_comparison,
+  filename = paste0(working_dir,"performance_results/FetchData.png"), 
+  device = "png", 
+  width = 16, 
+  height = 8,
+  bg = "#FFFFFF"
+  )
+```
+
+
+## fetchData on one metadata variable vs. fetch_metadata
+
+```{r}
+#subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000)
+#trials <- 1:5
+
+times <- c()
+n_cells <- c()
+fxn <- c()
+
+# Seurat objects
+for (subset_size in subset_sizes){
+    # Run test for i trials per number of cells
+    for (i in trials){
+        # Display the current subset size and trial
+        cat("Subset size ", subset_size, ", trial ", i, sep = "")
+        
+        # Load random subset
+        subset <- 
+          readRDS(
+            paste0(
+              working_dir, 
+              "Random_subsets/Seurat/",
+              paste0(as.integer(subset_size), "_", i, ".rds")
+            )
+          )
+        
+        # Run FetchData and time run with Sys.time()
+        start_time <- Sys.time()
+        
+        FetchData(
+            subset, 
+            vars = c("cell_type")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        # Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "FetchData.Seurat")
+        
+        start_time <- Sys.time()
+        
+        SCUBA::fetch_metadata(
+            subset, 
+            vars = c("cell_type")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        # Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "fetch_metadata.Seurat")
+        
+        # Carriage return, to avoid cluttering output during testing
+        cat("\r")
+    }
+}
+
+seurat_trial <-
+    data.frame(
+    `n_cells` = n_cells,
+    `run_time` = times,
+    `fxn` = fxn
+    )
+```
+
+```{r}
+# FetchData, SingleCellExperiment
+#subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000)
+#trials <- 1:5
+
+times <- c()
+n_cells <- c()
+fxn <- c()
+
+for (subset_size in subset_sizes){
+    # Run test for i trials per number of cells
+    for (i in trials){
+        # Display the current subset size and trial
+        cat("Subset size ", subset_size, ", trial ", i, sep = "")
+        
+        # Load random subset
+        subset <- 
+          HDF5Array::loadHDF5SummarizedExperiment(
+            paste0(
+              working_dir,
+              "Random_subsets/SingleCellExperiment/",
+              paste0(as.integer(subset_size), "_", i)
+              )
+            )
+        
+        # Run FetchData and time run with Sys.time()
+        start_time <- Sys.time()
+        
+        FetchData(
+            subset, 
+            vars = c("cell_type")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        #  Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "FetchData.SingleCellExperiment")
+        
+        start_time <- Sys.time()
+        
+        SCUBA::fetch_metadata(
+            subset, 
+            vars = c("cell_type")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        # Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "fetch_metadata.SingleCellExperiment")
+        # Carriage return, to avoid cluttering output during testing
+        cat("\r")
+    }
+}
+
+sce_trial <-
+  data.frame(
+    `n_cells` = n_cells,
+    `run_time` = times,
+    `fxn` = fxn
+  )
+```
+
+```{r}
+#subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000)
+#trials <- 1:5
+
+# FetchData, anndata objects
+times <- c()
+n_cells <- c()
+fxn <- c()
+
+# Seurat objects
+for (subset_size in subset_sizes){
+    # Run test for i trials per number of cells
+    for (i in trials){
+        # Display the current subset size and trial
+        cat("Subset size ", subset_size, ", trial ", i, sep = "")
+        
+        # Load random subset
+        subset <- 
+          anndata::read_h5ad(
+            paste0(
+              working_dir,
+              "Random_subsets/anndata/",
+              paste0(as.integer(subset_size), "_", i, ".h5ad")
+            )
+          )
+        
+        # Run FetchData and time run with Sys.time()
+        start_time <- Sys.time()
+        
+        FetchData(
+            subset, 
+            vars = c("cell_type")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        #  Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "FetchData.AnnDataR6")
+        
+        start_time <- Sys.time()
+        
+        SCUBA::fetch_metadata(
+            subset, 
+            vars = c("cell_type")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        
+        # Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "fetch_metadata.AnnDataR6")
+        
+        # Carriage return, to avoid cluttering output during testing
+        cat("\r")
+    }
+}
+
+anndata_trial <-
+    data.frame(
+    `n_cells` = n_cells,
+    `run_time` = times,
+    `fxn` = fxn
+    )
+
+#have to run this after big anndata chunks
+reticulate::import("gc")$collect()
+
+```
+
+```{r}
+fetchdata_vs_fetchmetadata_results <- 
+  rbind(
+    seurat_trial, 
+    sce_trial, 
+    anndata_trial
+  )
+
+write.csv(
+  fetchdata_vs_fetchmetadata_results,
+  file = paste0(
+    working_dir,
+    "performance_results/FetchData_vs_fetch_metadata_3.csv"
+  ),
+  row.names = FALSE
+)
+```
+
+```{r FetchData vs. fetch_metadata drafts}
+# # Boxplot ####
+# results_df <- read.csv("SCUBA/performance_results/FetchData_vs_fetch_metadata_3.csv")
+# 
+# # Add information for object type and function based on `fxn` column
+# results_df$object <- 
+#   case_when(
+#     results_df$fxn %in% 
+#       c("FetchData.Seurat", "fetch_metadata.Seurat") ~ "Seurat",
+#     results_df$fxn %in% 
+#       c("FetchData.SingleCellExperiment", 
+#         "fetch_metadata.SingleCellExperiment") ~ "SingleCellExperiment",
+#     results_df$fxn %in%
+#       c("FetchData.AnnDataR6", "fetch_metadata.AnnDataR6") ~ "anndata",
+#     TRUE ~ NA
+#   )
+# 
+# results_df$Function <- 
+#   case_when(
+#     results_df$fxn %in% 
+#       c("FetchData.Seurat", 
+#         "FetchData.SingleCellExperiment", 
+#         "FetchData.AnnDataR6") ~ "FetchData",
+#     results_df$fxn %in% 
+#       c("fetch_metadata.Seurat",  
+#         "fetch_metadata.SingleCellExperiment",
+#         "fetch_metadata.AnnDataR6") ~ "fetch_metadata",
+#     TRUE ~ NA
+#   )
+# 
+# # Re-factor object, function columns
+# results_df$object <-
+#   factor(
+#     results_df$object,
+#     levels = c("Seurat", "SingleCellExperiment", "anndata")
+#   )
+# 
+# results_df$Function <-
+#   factor(
+#     results_df$Function,
+#     levels = c("FetchData", "fetch_metadata")
+#   )
+# 
+# 
+# # Convert number of cells to character
+# results_df$n_cells <-
+#   as.character(
+#     # Extract from scientific notation with as.integer
+#     as.integer(results_df$n_cells)
+#     )
+# 
+# results_df$n_cells <- 
+#   factor(
+#     results_df$n_cells,
+#     levels = 
+#       str_sort(
+#         unique(results_df$n_cells), 
+#         numeric = TRUE
+#         )
+#   )
+# 
+# # Remove single outlier for SingleCellExperiment, FetchData, 10,000 cells
+# results_df <- results_df[-113,] 
+# 
+# #results_df <- results_df %>% rename(c("Method" = "fxn"))
+# 
+# fetchData_box_plt <- 
+#   ggplot(data = results_df, aes(x = object, y = run_time)) +
+#   geom_boxplot(aes(color = Function)) +
+#   facet_wrap(
+#     ~ n_cells, 
+#     #scale = "free", 
+#     ncol = 4
+#     ) +
+#   scale_color_manual(
+#     values = 
+#       c("#0079FF", "#8C00FF"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
+#     aesthetics = "color",
+#     na.value = "grey50"
+#     ) +
+#   labs(
+#     title = "FetchData vs. fetch_metadata", 
+#     #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
+#     ) +
+#   #xlab("Number of cells") +
+#   ylab("Run Time (s)") +
+#   theme(
+#     plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+#     plot.subtitle = element_text(hjust = 0.5),
+#     #axis.title.y = element_blank(),
+#     axis.title.x = element_blank(),
+#     axis.text.x = element_text(angle = 45, hjust = 1)
+#   ) +
+#   coord_cartesian(ylim = c(0,0.5)) +
+#   facet_theme #+
+#   #coord_flip()
+# 
+# fetchData_box_plt
+# 
+# ggsave(
+#   fetchData_box_plt,
+#   filename = "SCUBA/performance_results/FetchData_vs_FetchMetadata_3_fixed_scale.png",
+#   device = "png",
+#   width = 16,
+#   height = 8,
+#   bg = "#FFFFFF"
+#   )
+# 
+# # Boxplot, separating object types, focusing on comparison between functions
+# fetchdata_box_plots <- list()
+# 
+# for (obj_type in c("Seurat", "SingleCellExperiment", "anndata")){
+#   fetchdata_box_plots[[obj_type]] <-
+#   results_df %>% 
+#   dplyr::filter(object == obj_type) %>% 
+#   ggplot(data = ., aes(x = n_cells, y = run_time)) +
+#   geom_boxplot(aes(color = Function)) +
+#   # facet_wrap(
+#   #   ~ n_cells, 
+#   #   #scale = "free", 
+#   #   ncol = 4
+#   #   ) +
+#   scale_color_manual(
+#     values = 
+#       c("#0079FF", "#8C00FF"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
+#     aesthetics = "color",
+#     na.value = "grey50"
+#     ) +
+#   labs(
+#     title = "FetchData vs. fetch_metadata", 
+#     #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
+#     ) +
+#   #xlab("Number of cells") +
+#   ylab("Run Time (s)") +
+#   theme(
+#     plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+#     plot.subtitle = element_text(hjust = 0.5),
+#     #axis.title.y = element_blank(),
+#     axis.title.x = element_blank(),
+#     axis.text.x = element_text(angle = 45, hjust = 1)
+#   ) +
+#   coord_cartesian(ylim = c(0,0.5)) +
+#   facet_theme #+
+#   #coord_flip()
+# }
+# 
+# # Plots split by object type, separating scales for each object ####
+# obj_types <- c("Seurat", "SingleCellExperiment", "anndata")
+# fetchdata_vs_fetchmetadata_box <- list()
+# 
+# for (i in 1:length(obj_types)){
+#   fetchdata_vs_fetchmetadata_box[[i]] <-
+#     results_df %>% 
+#     dplyr::filter(object == obj_types[[i]]) %>% 
+#     ggplot(data = ., aes(x = n_cells, y = run_time)) +
+#     geom_boxplot(aes(color = Function)) +
+#     # facet_wrap(
+#     #   ~ n_cells, 
+#     #   #scale = "free", 
+#     #   ncol = 4
+#     #   ) +
+#     scale_color_manual(
+#       values = 
+#         c("#0079FF", "#8C00FF"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
+#       aesthetics = "color",
+#       na.value = "grey50"
+#       ) +
+#     # labs(
+#     #   title = "FetchData vs. fetch_metadata", 
+#     #   #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
+#     #   ) +
+#     xlab("Number of Cells") +
+#     ylab("Run Time (s)") +
+#     theme(
+#       plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+#       plot.subtitle = element_text(hjust = 0.5),
+#       #axis.title.y = element_blank(),
+#       axis.title.x = element_blank(),
+#       axis.text.x = element_text(angle = 45, hjust = 1)
+#     ) +
+#     #coord_cartesian(ylim = c(0,0.5)) +
+#     facet_theme #+
+#     #coord_flip()
+# }
+# 
+# patchwork::wrap_plots(
+#   fetchdata_vs_fetchmetadata_box,
+#   ncol = 1,
+#   guides = "collect"
+# )
+# 
+# 
+# # Alternate: facet by object instead of number of cells ####
+# facet_by_object <-
+#   results_df %>%
+#   ggplot(data = ., aes(x = n_cells, y = run_time)) +
+#   geom_boxplot(aes(color = Function)) +
+#   facet_wrap(
+#     ~ object,
+#     scales = "free",
+#     ncol = 1
+#     ) +
+#   scale_color_manual(
+#     values = 
+#       c("#0079FF", "#8C00FF"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
+#     aesthetics = "color",
+#     na.value = "grey50"
+#     ) +
+#   labs(
+#     title = "FetchData vs. fetch_metadata", 
+#     #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
+#     ) +
+#   ylab("Run Time (s)") +
+#   xlab("Number of Cells") +
+#   theme(
+#     plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+#     plot.subtitle = element_text(hjust = 0.5),
+#     #axis.title.y = element_blank(),
+#     #axis.title.x = element_blank(),
+#     axis.text.x = element_text(angle = 45, hjust = 1)
+#   ) +
+#   #coord_cartesian(ylim = c(0,0.5)) +
+#   facet_theme
+#  
+# facet_by_object
+
+```
+
+```{r fetchData_vs_fetch_metadata_boxplot}
+# Boxplot ####
+results_df <- read.csv(paste0(working_dir, "performance_results/FetchData_vs_fetch_metadata_3.csv"))
+
+# Add information for object type and function based on `fxn` column
+results_df$object <- 
+  case_when(
+    results_df$fxn %in% 
+      c("FetchData.Seurat", "fetch_metadata.Seurat") ~ "Seurat",
+    results_df$fxn %in% 
+      c("FetchData.SingleCellExperiment", 
+        "fetch_metadata.SingleCellExperiment") ~ "SingleCellExperiment",
+    results_df$fxn %in%
+      c("FetchData.AnnDataR6", "fetch_metadata.AnnDataR6") ~ "anndata",
+    TRUE ~ NA
+  )
+
+results_df$Function <- 
+  case_when(
+    results_df$fxn %in% 
+      c("FetchData.Seurat", 
+        "FetchData.SingleCellExperiment", 
+        "FetchData.AnnDataR6") ~ "FetchData",
+    results_df$fxn %in% 
+      c("fetch_metadata.Seurat",  
+        "fetch_metadata.SingleCellExperiment",
+        "fetch_metadata.AnnDataR6") ~ "fetch_metadata",
+    TRUE ~ NA
+  )
+
+# Re-factor object, function columns
+results_df$object <-
+  factor(
+    results_df$object,
+    levels = c("Seurat", "SingleCellExperiment", "anndata")
+  )
+
+results_df$Function <-
+  factor(
+    results_df$Function,
+    levels = c("FetchData", "fetch_metadata")
+  )
+
+
+# Convert number of cells to character
+results_df$n_cells <-
+  as.character(
+    # Extract from scientific notation with as.integer
+    as.integer(results_df$n_cells)
+    )
+
+results_df$n_cells <- 
+  factor(
+    results_df$n_cells,
+    levels = 
+      str_sort(
+        unique(results_df$n_cells), 
+        numeric = TRUE
+        )
+  )
+
+# Remove single outlier for SingleCellExperiment, FetchData, 10,000 cells
+results_df <- results_df[-113,] 
+
+# Plot
+fetchData_vs_fetch_metadata <-
+  results_df %>%
+  ggplot(data = ., aes(x = n_cells, y = run_time)) +
+  geom_boxplot(aes(color = Function)) +
+  facet_wrap(
+    ~ object,
+    scales = "free",
+    ncol = 1
+    ) +
+  scale_color_manual(
+    values = 
+      c("#0079FF", "#8C00FF"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
+    aesthetics = "color",
+    na.value = "grey50"
+    ) +
+  # labs(
+  #   title = "FetchData vs. fetch_metadata", 
+  #   #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
+  #   ) +
+  ylab("Run Time (s)") +
+  xlab("Number of Cells") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    plot.subtitle = element_text(hjust = 0.5),
+    #axis.title.y = element_blank(),
+    #axis.title.x = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  #coord_cartesian(ylim = c(0,0.5)) +
+  facet_theme
+ 
+fetchData_vs_fetch_metadata
+```
+
+```{r}
+# Save box plot from above code chunk (version faceted by object)
+ggsave(
+  fetchData_vs_fetch_metadata,
+  filename = paste0(working_dir, "performance_results/FetchData_vs_FetchMetadata_3_free_scale_facet_by_object.png"),
+  device = "png",
+  width = 16,
+  height = 8,
+  bg = "#FFFFFF"
+  )
+```
+
+```{r FetchData vs. fetch_metadata lineplot}
+# results_df <- read.csv("SCUBA/performance_results/FetchData_vs_fetch_metadata_3.csv")
+# 
+# # Add information for object type and function based on `fxn` column
+# results_df$object <- 
+#   case_when(
+#     results_df$fxn %in% 
+#       c("FetchData.Seurat", "fetch_metadata.Seurat") ~ "Seurat",
+#     results_df$fxn %in% 
+#       c("FetchData.SingleCellExperiment", 
+#         "fetch_metadata.SingleCellExperiment") ~ "SingleCellExperiment",
+#     results_df$fxn %in%
+#       c("FetchData.AnnDataR6", "fetch_metadata.AnnDataR6") ~ "anndata",
+#     TRUE ~ NA
+#   )
+# 
+# results_df$Function <- 
+#   case_when(
+#     results_df$fxn %in% 
+#       c("FetchData.Seurat", 
+#         "FetchData.SingleCellExperiment", 
+#         "FetchData.AnnDataR6") ~ "FetchData",
+#     results_df$fxn %in% 
+#       c("fetch_metadata.Seurat",  
+#         "fetch_metadata.SingleCellExperiment",
+#         "fetch_metadata.AnnDataR6") ~ "fetch_metadata",
+#     TRUE ~ NA
+#   )
+# 
+# # Re-factor object, function columns
+# results_df$object <-
+#   factor(
+#     results_df$object,
+#     levels = c("Seurat", "SingleCellExperiment", "anndata")
+#   )
+# 
+# results_df$Function <-
+#   factor(
+#     results_df$Function,
+#     levels = c("FetchData", "fetch_metadata")
+#   )
+# 
+# 
+# # Convert number of cells to character
+# results_df$n_cells <-
+#   as.character(
+#     # Extract from scientific notation with as.integer
+#     as.integer(results_df$n_cells)
+#     )
+# 
+# results_df$n_cells <- 
+#   factor(
+#     results_df$n_cells,
+#     levels = 
+#       str_sort(
+#         unique(results_df$n_cells), 
+#         numeric = TRUE
+#         )
+#   )
+# 
+# # Remove single outlier for SingleCellExperiment, FetchData, 10,000 cells
+# results_df <- results_df[-113,] 
+# 
+# # Create summary stats for results
+# summary_df <-
+#   results_df |>
+#   group_by(Function, object, n_cells) |>
+#   summarize(
+#     mean_time = mean(run_time),
+#     sd = sd(run_time)
+#   )
+# 
+# line_plot <-
+#   ggplot(data = summary_df, aes(x = n_cells, y = mean_time, color = Function, group = Function)) +
+#   geom_point() +
+#   geom_line() +
+#   geom_errorbar(aes(ymin = mean_time - sd, ymax = mean_time + sd)) +
+#   scale_color_manual(
+#       values = c("#0079FF", "#8C00FF"),
+#       aesthetics = "color",
+#       na.value = "grey50"
+#       ) +
+#   facet_wrap(
+#     ~ object,
+#     ncol = 1,
+#     scales = "free"
+#   ) +
+#   # scale_y_continuous(
+#   #   limits = c(0, 9)
+#   # ) +
+#   # scale_y_continuous(
+#   #   breaks = seq(from = 0, to = 0.5, by = 0.05),
+#   #   limits = c(0, 0.5)#,
+#   #   #labels = function(breaks){paste0(breaks, " s")}
+#   #   ) +
+#   ylab("Time (s)") +
+#   xlab("Number of Cells") +
+#   labs(
+#     title = "FetchData vs. fetch_metadata",
+#     # subtitle =
+#     #   "(200k Cells x 29k Genes, HDF5Array Compression Level 3 for SCE objects)"
+#   ) +
+#   guides(
+#     color =
+#       guide_legend(
+#         title = NULL
+#         )
+#   ) +
+#   theme_cowplot() +
+#   theme(
+#     plot.title = element_text(hjust = 0.5, size = 18),
+#     plot.subtitle = element_text(hjust = 0.5),
+#     axis.text.x = element_text(size = 9)
+#     ) +
+#   facet_theme
+# 
+# line_plot
+```
+
+```{r}
+# Save line plot
+# ggsave(
+#   line_plot,
+#   filename = "SCUBA/performance_results/FetchData_vs_FetchMetadata_3_line_plot.png",
+#   device = "png",
+#   width = 16,
+#   height = 8,
+#   bg = "#FFFFFF"
+#   )
+```
+
+## fetchData on UMAP coordinates vs. fetch_reduction
+
+```{r}
+#subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000)
+#trials <- 1:5
+
+times <- c()
+n_cells <- c()
+fxn <- c()
+
+# Seurat objects
+for (subset_size in subset_sizes){
+    # Run test for i trials per number of cells
+    for (i in trials){
+        # Display the current subset size and trial
+        cat("Subset size ", subset_size, ", trial ", i, sep = "")
+        
+        # Load random subset
+        subset <- 
+          readRDS(
+            paste0(
+              working_dir,
+              "Random_subsets/Seurat/",
+              paste0(as.integer(subset_size), "_", i, ".rds")
+            )
+          )
+        
+        # Run FetchData and time run with Sys.time()
+        start_time <- Sys.time()
+        
+        FetchData(
+            subset, 
+            vars = c("UMAP_1", "UMAP_2")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        # Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "FetchData.Seurat")
+        
+        start_time <- Sys.time()
+        
+        SCUBA::fetch_reduction(
+            subset, 
+            reduction = "UMAP",
+            dims = c(1, 2)
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        # Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "fetch_reduction.Seurat")
+        
+        # Carriage return, to avoid cluttering output during testing
+        cat("\r")
+    }
+}
+
+seurat_trial <-
+    data.frame(
+    `n_cells` = n_cells,
+    `run_time` = times,
+    `fxn` = fxn
+    )
+```
+
+```{r}
+# FetchData, SingleCellExperiment
+#subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000)
+#trials <- 1:5
+
+times <- c()
+n_cells <- c()
+fxn <- c()
+
+for (subset_size in subset_sizes){
+    # Run test for i trials per number of cells
+    for (i in trials){
+        # Display the current subset size and trial
+        cat("Subset size ", subset_size, ", trial ", i, sep = "")
+        
+        # Load random subset
+        subset <- 
+          HDF5Array::loadHDF5SummarizedExperiment(
+            paste0(
+              working_dir,
+              "Random_subsets/SingleCellExperiment/",
+              paste0(as.integer(subset_size), "_", i)
+              )
+            )
+        
+        # Run FetchData and time run with Sys.time()
+        start_time <- Sys.time()
+        
+        FetchData(
+            subset, 
+            vars = c("UMAP_1", "UMAP_2")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        #  Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "FetchData.SingleCellExperiment")
+        
+        start_time <- Sys.time()
+        
+        SCUBA::fetch_reduction( 
+            subset, 
+            reduction = "UMAP",
+            dims = c(1, 2)
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        # Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "fetch_reduction.SingleCellExperiment")
+        # Carriage return, to avoid cluttering output during testing
+        cat("\r")
+    }
+}
+
+sce_trial <-
+  data.frame(
+    `n_cells` = n_cells,
+    `run_time` = times,
+    `fxn` = fxn
+  )
+```
+
+
+
+```{r}
+#subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000)
+#trials <- 1:5
+
+# FetchData, anndata objects
+times <- c()
+n_cells <- c()
+fxn <- c()
+
+# Seurat objects
+for (subset_size in subset_sizes){
+    # Run test for i trials per number of cells
+    for (i in trials){
+        # Display the current subset size and trial
+        cat("Subset size ", subset_size, ", trial ", i, sep = "")
+        
+        # Load random subset
+        subset <- 
+          anndata::read_h5ad(
+            paste0(
+              working_dir,
+              "Random_subsets/anndata/",
+              paste0(as.integer(subset_size), "_", i, ".h5ad")
+            )
+          )
+        
+        # Run FetchData and time run with Sys.time()
+        start_time <- Sys.time()
+        
+        FetchData(
+            subset, 
+            vars = c("X_umap_1", "X_umap_2")
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        #  Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "FetchData.AnnDataR6")
+        
+        start_time <- Sys.time()
+        
+        SCUBA::fetch_reduction(
+            subset, 
+            reduction = "X_umap",
+            dims = c(1, 2)
+            )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        
+        # Also store the number of cells associated with the current trial,
+        # and the function ran 
+        n_cells <- c(n_cells, subset_size)
+        fxn <- c(fxn, "fetch_reduction.AnnDataR6")
+        
+        # Carriage return, to avoid cluttering output during testing
+        cat("\r")
+    }
+}
+
+anndata_trial <-
+    data.frame(
+    `n_cells` = n_cells,
+    `run_time` = times,
+    `fxn` = fxn
+    )
+
+#required after large anndata chunks
+reticulate::import("gc")$collect()
+```
+
+```{r}
+fetchdata_vs_fetchreduction_results <- 
+  rbind(seurat_trial, sce_trial, anndata_trial)
+
+write.csv(
+   fetchdata_vs_fetchreduction_results,
+   file = paste0(
+     working_dir,
+     "performance_results/FetchData_vs_fetch_reduction.csv"
+   ),
+   row.names = FALSE
+)
+```
+
+## Box plot
+
+```{r FetchData vs. fetch_reduction boxplot}
+results_df <- 
+  read.csv(
+    paste0(
+      working_dir,
+      "performance_results/FetchData_vs_fetch_reduction.csv"
+    )
+)
+
+# Add information for object type and function based on `fxn` column
+results_df$object <- 
+  case_when(
+    results_df$fxn %in% 
+      c("FetchData.Seurat", "fetch_reduction.Seurat") ~ "Seurat",
+    results_df$fxn %in% 
+      c("FetchData.SingleCellExperiment", 
+        "fetch_reduction.SingleCellExperiment") ~ "SingleCellExperiment",
+    results_df$fxn %in%
+      c("FetchData.AnnDataR6", "fetch_reduction.AnnDataR6") ~ "anndata",
+    TRUE ~ NA
+  )
+
+results_df$Function <- 
+  case_when(
+    results_df$fxn %in% 
+      c("FetchData.Seurat", 
+        "FetchData.SingleCellExperiment", 
+        "FetchData.AnnDataR6") ~ "FetchData",
+    results_df$fxn %in% 
+      c("fetch_reduction.Seurat",  
+        "fetch_reduction.SingleCellExperiment",
+        "fetch_reduction.AnnDataR6") ~ "fetch_reduction",
+    TRUE ~ NA
+  )
+
+# Re-factor object, function columns
+results_df$object <-
+  factor(
+    results_df$object,
+    levels = c("Seurat", "SingleCellExperiment", "anndata")
+  )
+
+results_df$Function <-
+  factor(
+    results_df$Function,
+    levels = c("FetchData", "fetch_reduction")
+  )
+
+
+# Convert number of cells to character
+results_df$n_cells <-
+  as.character(
+    # Extract from scientific notation with as.integer
+    as.integer(results_df$n_cells)
+    )
+
+results_df$n_cells <- 
+  factor(
+    results_df$n_cells,
+    levels = 
+      str_sort(
+        unique(results_df$n_cells), 
+        numeric = TRUE
+        )
+  )
+
+# Remove extreme outlier for SingleCellExperiment, fetch_reduction
+results_df <- results_df[-93,]
+
+fetchdata_vs_fetch_reduction <-
+  results_df %>%
+  ggplot(data = ., aes(x = n_cells, y = run_time)) +
+  geom_boxplot(aes(color = Function)) +
+  facet_wrap(
+    ~ object,
+    scales = "free",
+    ncol = 1
+    ) +
+  scale_color_manual(
+    values = 
+      c("#0079FF", "#E61A1A"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
+    aesthetics = "color",
+    na.value = "grey50"
+    ) +
+  # labs(
+  #   title = "FetchData vs. fetch_metadata", 
+  #   #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
+  #   ) +
+  ylab("Run Time (s)") +
+  xlab("Number of Cells") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    plot.subtitle = element_text(hjust = 0.5),
+    #axis.title.y = element_blank(),
+    #axis.title.x = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  #coord_cartesian(ylim = c(0,0.5)) +
+  facet_theme
+ 
+fetchdata_vs_fetch_reduction
+```
+
+```{r}
+# Save box plot
+ggsave(
+  fetchdata_vs_fetch_reduction,
+  filename = paste0(
+    working_dir,
+    "performance_results/FetchData_vs_fetch_reduction.png"
+  ),
+  device = "png",
+  width = 16,
+  height = 8,
+  bg = "#FFFFFF"
+)
+```
+
+# Combined figure
+
+```{r}
+layout <- 
+  c("
+    AAAA
+    BBCC
+    BBCC
+    ")
+
+combined_figure <-
+  patchwork::wrap_plots(
+    fetchData_comparison,
+    fetchData_vs_fetch_metadata,
+    fetchdata_vs_fetch_reduction,
+    design = layout,
+    guides = "keep"
+    ) +
+    patchwork::plot_annotation(
+        tag_levels = list(c("A", "B", "C"))
+      ) &
+  theme(plot.tag = element_text(size = 24, face = "bold"))
+
+# PDF export
+pdf(file = paste0(working_dir, "performance_results/combined_performance.pdf"), width = 14, height = 16)
+combined_figure
+dev.off()
+
+# SVG Export
+svglite::svglite(file = paste0(working_dir, "performance_results/combined_performance.svg"), width = 14, height = 16)
+combined_figure
+dev.off()
+
+# PNG export
+png(
+  file = paste0(working_dir, 
+                "performance_results/combined_performance.png"
+         ), 
+  width = 14, 
+  height = 16, 
+  units = "in", 
+  res = 300
+  )
+combined_figure
+dev.off()
+```
+
