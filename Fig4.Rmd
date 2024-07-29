@@ -6,12 +6,22 @@ editor_options:
   chunk_output_type: console
 ---
 
-This Rmd contains the code used to generate the performance plots for the SCUBA manuscript.
+The Rmd below contains code for generating **Figure 4** in the SCUBA manuscript. The dataset for this exercise was downloaded from CELLxGENE. The dataset may be directly downloaded via this link: https://datasets.cellxgene.cziscience.com/9343817c-5c74-4548-a7d5-01990df5af7a.rds
+
+The directory `working_dir` specified below must be set to the directory where the dataset was downloaded for this Rmd to work as-is. Several directories will be created in this directory for storing randomized subsets created from the original dataset.
+
+The randomized subsets created by this Rmd will take up large amounts of disk space. Please allow approximately 175 GB of free disk space to run this Rmd. 
+
+The disk space requirements are related to the approach taken for performance benchmarking. Initially the object was downloaded and randomized subsets of each object class were created in-memory, but large decreases in performance were observed for objects with large numbers of cells. This was likely due to the usage of swap (or the paging file on Windows), as the size of the object and the current randomized subset exceeded the amount of physical memory available. In order for performance testing to be performed on a personal computer in a way that excludes the confounding factor of swap usage, we decided to store subsets on disk instead of creating them in memory. 
+
+The original approach used for testing is at the bottom of this document, under the `Original Performance Testing Code` section.
 
 ```{r}
 library(SCUBA)
+# BiocManager::install("HDF5Array")
 library(HDF5Array)
 library(Seurat)
+# BiocManager::install("SingleCellExperiment")
 library(SingleCellExperiment)
 library(anndata)
 library(reticulate)
@@ -21,13 +31,13 @@ library(ggplot2)
 
 library(tictoc)
 library(cowplot)
-
 library(stringr)
 
 # Used to add gene symbols to objects downloaded from CELLxGENE
 # Feature names of CELLxGENE objects are ENSEMBL IDs by default
+# BiocManager::install("biomaRt")
 library(biomaRt)
-
+#devtools::install_github("cellgeni/sceasy")
 library(sceasy)
 
 # Use cowplot ggplot2 theme by default
@@ -41,17 +51,9 @@ facet_theme <-
     strip.text = element_text(face = "bold")
     )
 
-# Path to a directory where files and directories for this analysis will be 
-# stored. 
+# Path to a directory where files and directories for this analysis will be stored.
 working_dir <- "working_dir_path"
 ```
-
-For this exercise, I downloaded a larger dataset from CellXGene (the Human Brain atlas dataset):
-https://cellxgene.cziscience.com/collections/283d65eb-dd53-496d-adb7-7570c7caa443
-
-direct link: https://datasets.cellxgene.cziscience.com/9343817c-5c74-4548-a7d5-01990df5af7a.rds
-
-I used "all non-neuronal cells", and downloaded the dataset in Seruat format.
 
 ```{r}
 # Load Seurat object
@@ -64,11 +66,7 @@ sobj <-
     )
 ```
 
-Due to the very large size of this object, performance issues likely related to swap usage were observed during testing, which introduces a confounding factor when measuring performance. To control this, subsets were formed before testing and saved to disk, instead of being formed during testing with the full object still loaded. 
-
-The original code used for testing is at the bottom of this document, under the `Original Performance Testing Code` section.
-
-# Create Subsets 
+# Create Subsets and store in memory 
 
 Subsets for Seurat objects
 
@@ -182,7 +180,7 @@ for (subset_size in subset_sizes){
 
 ```
 
-Creation of anndata objects 
+anndata objects 
 
 ```{r}
 #subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000) |> as.integer()
