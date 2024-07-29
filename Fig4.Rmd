@@ -41,10 +41,10 @@ facet_theme <-
     strip.text = element_text(face = "bold")
     )
 
-working_dir <- "/mnt/filestore/jairav.desai/SCUBA_Performance_Testing/"
+# Path to a directory where files and directories for this analysis will be 
+# stored. 
+working_dir <- "working_dir_path"
 ```
-
-<!--This example will use the dataset from [Chan et al. 2021](https://www.cell.com/cancer-cell/fulltext/S1535-6108(21)00497-9#gr1). The dataset can be downloaded [here](https://cellxgene.cziscience.com/collections/62e8f058-9c37-48bc-9200-e767f318a8ec) (download the "Combined samples" dataset). -->
 
 For this exercise, I downloaded a larger dataset from CellXGene (the Human Brain atlas dataset):
 https://cellxgene.cziscience.com/collections/283d65eb-dd53-496d-adb7-7570c7caa443

@@ -8,3 +8,4 @@
 *.pdf
 *.svg
 temp.Rmd
+.DS_Store
