@@ -436,6 +436,8 @@ write.csv(
 
 # fetchData on one metadata variable vs. fetch_metadata
 
+The testing below replicates the results shown in **Figure 4A** of the manuscript. The script compares the run time of fetching one metadata feature using FetchData compared to using the `fetch_metadata` convenience function provided by SCUBA.
+
 ```{r}
 #subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000)
 #trials <- 1:5
@@ -685,6 +687,8 @@ write.csv(
 ```
 
 # fetchData on UMAP coordinates vs. fetch_reduction
+
+The testing below replicates the results shown in **Figure 4B** of the manuscript. The script compares the run time of fetching reduction coordinates for one dimensional reduction using FetchData compared to using the `fetch_reduction` convenience function provided by SCUBA.
 
 ```{r}
 #subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000)
