@@ -26,6 +26,6 @@ AML_h5ad()
 - [`Demo_Object_Generation.Rmd`](https://github.com/amc-heme/SCUBA_Manuscript/blob/main/Demo_Object_Generation.Rmd): code for generating the `AML_Seurat`, `AML_SCE()`, and `AML_h5ad()` datasets from the Triana et al. 2021 reference dataset.
 - [`Fig2.Rmd`](https://github.com/amc-heme/SCUBA_Manuscript/blob/main/Fig2.Rmd): examples of FetchData methods added by SCUBA for SingleCellExperiment and anndata objects alongside the existing Seurat method, as shown in Figure 2 of the manuscript.
 - [`Fig3.Rmd`](https://github.com/amc-heme/SCUBA_Manuscript/blob/main/Fig3.Rmd): examples of `fetch_metadata` and `fetch_reduction` generics created by SCUBA for the retrieval of metadata and reductions, repsectively.
-- `Fig4.Rmd`: code used to evaluate performance of FetchData on a large multimodal reference dataset.
+- [`Fig4.Rmd`](https://github.com/amc-heme/SCUBA_Manuscript/blob/main/Fig4.Rmd): code used to evaluate performance of FetchData on a large multimodal reference dataset.
 - [`Fig5.Rmd`](https://github.com/amc-heme/SCUBA_Manuscript/blob/main/Fig5.Rmd): code demonstrating the use of SCUBA methods as a foundation for plotting.
 - [`Fig6.Rmd`](https://github.com/amc-heme/SCUBA_Manuscript/blob/main/Fig6.Rmd): example usage of SCUBA to view the unique values of a metadata variable in an object, a common object exploration operation.
