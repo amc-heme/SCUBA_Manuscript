@@ -1,6 +1,6 @@
 # Code for generating data, figures used in the SCUBA manuscript
 
-Click here to view the manuscript. <!-- Link to manuscript -->
+<!-- Click here to view the manuscript. --> <!-- Link to manuscript -->
 
 To run the code in the Rmd files included in this repo, SCUBA and all dependencies must be installed. For more information, see the "Pre-requisites" and "Installation" sections of the [SCUBA repo README](https://github.com/amc-heme/SCUBA).
 
