@@ -14,8 +14,6 @@ The randomized subsets created by this Rmd will take up large amounts of disk sp
 
 The disk space requirements are related to the approach taken for performance benchmarking. Initially the object was downloaded and randomized subsets of each object class were created in-memory, but large decreases in performance were observed for objects with large numbers of cells. This was likely due to the usage of swap (or the paging file on Windows), as the size of the object and the current randomized subset exceeded the amount of physical memory available. In order for performance testing to be performed on a personal computer in a way that excludes the confounding factor of swap usage, we decided to store subsets on disk instead of creating them in memory. 
 
-The original approach used for testing is at the bottom of this document, under the `Original Performance Testing Code` section.
-
 ```{r}
 library(SCUBA)
 # BiocManager::install("HDF5Array")
@@ -256,7 +254,9 @@ for (subset_size in subset_sizes){
 
 ```
 
-# Performance testing of FetchData on subsets
+# Performance testing of FetchData
+
+The testing below replicates the results shown in **Figure 4C** of the manuscript. Data for one feature was retrieved from each of the subsets using FetchData, and the run time was measured via the `tictoc` package. The performance of the existing Seurat method was compared to the methods created by SCUBA for SingleCellExperiment and anndata objects.
 
 ```{r}
 times <- c()
@@ -429,97 +429,12 @@ if(!dir.exists(results_dir)) dir.create(results_dir)
 
 write.csv(
   fetchdata_results, 
-  file = paste0(results_dir, "FetchData.csv"), 
+  file = paste0(working_dir, "performance_results/FetchData.csv"), 
   row.names = FALSE
 )
 ```
 
-### Plot
-
-```{r fetchData plot}
-results_df <- read.csv(paste0(working_dir, "performance_results/FetchData.csv"))
-
-# Rename function column lavels
-results_df$fxn <- 
-  plyr::revalue(
-    results_df$fxn, 
-    c("FetchData.Seurat" = "Seurat", 
-      "FetchData.SingleCellExperiment" = "SingleCellExperiment", 
-      "FetchData.AnnDataR6" = "anndata"
-      )
-    )
-
-# Re-factor
-results_df$fxn <- 
-  factor(
-    results_df$fxn, 
-    levels = 
-      c("Seurat",
-        "SingleCellExperiment",
-        "anndata"
-        )
-    )
-
-# Convert number of cells to character
-results_df$n_cells <-
-  as.character(
-    # Extract from scientific notation with as.integer
-    as.integer(results_df$n_cells)
-    )
-
-results_df$n_cells <- 
-  factor(
-    results_df$n_cells,
-    levels = 
-      as.character(
-        str_sort(
-          unique(results_df$n_cells), 
-          numeric = TRUE
-          )
-        )
-  )
-
-results_df <- results_df %>% rename(c("Method" = "fxn"))
-
-fetchData_comparison <- 
-  ggplot(data = results_df, aes(x = n_cells, y = run_time)) +
-  geom_boxplot(aes(color = Method)) +
-  scale_color_manual(
-    values = 
-      c("#880000", "#000088", "#B8AB2F"),
-    aesthetics = "color",
-    na.value = "grey50"
-    ) +
-  # labs(
-  #   title = "FetchData with a Single Gene", 
-  #   #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
-  #   ) +
-  xlab("Number of cells") +
-  ylab("Run Time (s)") +
-  theme(
-    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
-    plot.subtitle = element_text(hjust = 0.5),
-    #axis.title.y = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  ) #+
-  #coord_flip()
-
-fetchData_comparison
-```
-
-```{r save plot}
-ggsave(
-  fetchData_comparison,
-  filename = paste0(working_dir,"performance_results/FetchData.png"), 
-  device = "png", 
-  width = 16, 
-  height = 8,
-  bg = "#FFFFFF"
-  )
-```
-
-
-## fetchData on one metadata variable vs. fetch_metadata
+# fetchData on one metadata variable vs. fetch_metadata
 
 ```{r}
 #subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000)
@@ -769,477 +684,7 @@ write.csv(
 )
 ```
 
-```{r FetchData vs. fetch_metadata drafts}
-# # Boxplot ####
-# results_df <- read.csv("SCUBA/performance_results/FetchData_vs_fetch_metadata_3.csv")
-# 
-# # Add information for object type and function based on `fxn` column
-# results_df$object <- 
-#   case_when(
-#     results_df$fxn %in% 
-#       c("FetchData.Seurat", "fetch_metadata.Seurat") ~ "Seurat",
-#     results_df$fxn %in% 
-#       c("FetchData.SingleCellExperiment", 
-#         "fetch_metadata.SingleCellExperiment") ~ "SingleCellExperiment",
-#     results_df$fxn %in%
-#       c("FetchData.AnnDataR6", "fetch_metadata.AnnDataR6") ~ "anndata",
-#     TRUE ~ NA
-#   )
-# 
-# results_df$Function <- 
-#   case_when(
-#     results_df$fxn %in% 
-#       c("FetchData.Seurat", 
-#         "FetchData.SingleCellExperiment", 
-#         "FetchData.AnnDataR6") ~ "FetchData",
-#     results_df$fxn %in% 
-#       c("fetch_metadata.Seurat",  
-#         "fetch_metadata.SingleCellExperiment",
-#         "fetch_metadata.AnnDataR6") ~ "fetch_metadata",
-#     TRUE ~ NA
-#   )
-# 
-# # Re-factor object, function columns
-# results_df$object <-
-#   factor(
-#     results_df$object,
-#     levels = c("Seurat", "SingleCellExperiment", "anndata")
-#   )
-# 
-# results_df$Function <-
-#   factor(
-#     results_df$Function,
-#     levels = c("FetchData", "fetch_metadata")
-#   )
-# 
-# 
-# # Convert number of cells to character
-# results_df$n_cells <-
-#   as.character(
-#     # Extract from scientific notation with as.integer
-#     as.integer(results_df$n_cells)
-#     )
-# 
-# results_df$n_cells <- 
-#   factor(
-#     results_df$n_cells,
-#     levels = 
-#       str_sort(
-#         unique(results_df$n_cells), 
-#         numeric = TRUE
-#         )
-#   )
-# 
-# # Remove single outlier for SingleCellExperiment, FetchData, 10,000 cells
-# results_df <- results_df[-113,] 
-# 
-# #results_df <- results_df %>% rename(c("Method" = "fxn"))
-# 
-# fetchData_box_plt <- 
-#   ggplot(data = results_df, aes(x = object, y = run_time)) +
-#   geom_boxplot(aes(color = Function)) +
-#   facet_wrap(
-#     ~ n_cells, 
-#     #scale = "free", 
-#     ncol = 4
-#     ) +
-#   scale_color_manual(
-#     values = 
-#       c("#0079FF", "#8C00FF"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
-#     aesthetics = "color",
-#     na.value = "grey50"
-#     ) +
-#   labs(
-#     title = "FetchData vs. fetch_metadata", 
-#     #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
-#     ) +
-#   #xlab("Number of cells") +
-#   ylab("Run Time (s)") +
-#   theme(
-#     plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
-#     plot.subtitle = element_text(hjust = 0.5),
-#     #axis.title.y = element_blank(),
-#     axis.title.x = element_blank(),
-#     axis.text.x = element_text(angle = 45, hjust = 1)
-#   ) +
-#   coord_cartesian(ylim = c(0,0.5)) +
-#   facet_theme #+
-#   #coord_flip()
-# 
-# fetchData_box_plt
-# 
-# ggsave(
-#   fetchData_box_plt,
-#   filename = "SCUBA/performance_results/FetchData_vs_FetchMetadata_3_fixed_scale.png",
-#   device = "png",
-#   width = 16,
-#   height = 8,
-#   bg = "#FFFFFF"
-#   )
-# 
-# # Boxplot, separating object types, focusing on comparison between functions
-# fetchdata_box_plots <- list()
-# 
-# for (obj_type in c("Seurat", "SingleCellExperiment", "anndata")){
-#   fetchdata_box_plots[[obj_type]] <-
-#   results_df %>% 
-#   dplyr::filter(object == obj_type) %>% 
-#   ggplot(data = ., aes(x = n_cells, y = run_time)) +
-#   geom_boxplot(aes(color = Function)) +
-#   # facet_wrap(
-#   #   ~ n_cells, 
-#   #   #scale = "free", 
-#   #   ncol = 4
-#   #   ) +
-#   scale_color_manual(
-#     values = 
-#       c("#0079FF", "#8C00FF"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
-#     aesthetics = "color",
-#     na.value = "grey50"
-#     ) +
-#   labs(
-#     title = "FetchData vs. fetch_metadata", 
-#     #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
-#     ) +
-#   #xlab("Number of cells") +
-#   ylab("Run Time (s)") +
-#   theme(
-#     plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
-#     plot.subtitle = element_text(hjust = 0.5),
-#     #axis.title.y = element_blank(),
-#     axis.title.x = element_blank(),
-#     axis.text.x = element_text(angle = 45, hjust = 1)
-#   ) +
-#   coord_cartesian(ylim = c(0,0.5)) +
-#   facet_theme #+
-#   #coord_flip()
-# }
-# 
-# # Plots split by object type, separating scales for each object ####
-# obj_types <- c("Seurat", "SingleCellExperiment", "anndata")
-# fetchdata_vs_fetchmetadata_box <- list()
-# 
-# for (i in 1:length(obj_types)){
-#   fetchdata_vs_fetchmetadata_box[[i]] <-
-#     results_df %>% 
-#     dplyr::filter(object == obj_types[[i]]) %>% 
-#     ggplot(data = ., aes(x = n_cells, y = run_time)) +
-#     geom_boxplot(aes(color = Function)) +
-#     # facet_wrap(
-#     #   ~ n_cells, 
-#     #   #scale = "free", 
-#     #   ncol = 4
-#     #   ) +
-#     scale_color_manual(
-#       values = 
-#         c("#0079FF", "#8C00FF"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
-#       aesthetics = "color",
-#       na.value = "grey50"
-#       ) +
-#     # labs(
-#     #   title = "FetchData vs. fetch_metadata", 
-#     #   #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
-#     #   ) +
-#     xlab("Number of Cells") +
-#     ylab("Run Time (s)") +
-#     theme(
-#       plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
-#       plot.subtitle = element_text(hjust = 0.5),
-#       #axis.title.y = element_blank(),
-#       axis.title.x = element_blank(),
-#       axis.text.x = element_text(angle = 45, hjust = 1)
-#     ) +
-#     #coord_cartesian(ylim = c(0,0.5)) +
-#     facet_theme #+
-#     #coord_flip()
-# }
-# 
-# patchwork::wrap_plots(
-#   fetchdata_vs_fetchmetadata_box,
-#   ncol = 1,
-#   guides = "collect"
-# )
-# 
-# 
-# # Alternate: facet by object instead of number of cells ####
-# facet_by_object <-
-#   results_df %>%
-#   ggplot(data = ., aes(x = n_cells, y = run_time)) +
-#   geom_boxplot(aes(color = Function)) +
-#   facet_wrap(
-#     ~ object,
-#     scales = "free",
-#     ncol = 1
-#     ) +
-#   scale_color_manual(
-#     values = 
-#       c("#0079FF", "#8C00FF"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
-#     aesthetics = "color",
-#     na.value = "grey50"
-#     ) +
-#   labs(
-#     title = "FetchData vs. fetch_metadata", 
-#     #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
-#     ) +
-#   ylab("Run Time (s)") +
-#   xlab("Number of Cells") +
-#   theme(
-#     plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
-#     plot.subtitle = element_text(hjust = 0.5),
-#     #axis.title.y = element_blank(),
-#     #axis.title.x = element_blank(),
-#     axis.text.x = element_text(angle = 45, hjust = 1)
-#   ) +
-#   #coord_cartesian(ylim = c(0,0.5)) +
-#   facet_theme
-#  
-# facet_by_object
-
-```
-
-```{r fetchData_vs_fetch_metadata_boxplot}
-# Boxplot ####
-results_df <- read.csv(paste0(working_dir, "performance_results/FetchData_vs_fetch_metadata_3.csv"))
-
-# Add information for object type and function based on `fxn` column
-results_df$object <- 
-  case_when(
-    results_df$fxn %in% 
-      c("FetchData.Seurat", "fetch_metadata.Seurat") ~ "Seurat",
-    results_df$fxn %in% 
-      c("FetchData.SingleCellExperiment", 
-        "fetch_metadata.SingleCellExperiment") ~ "SingleCellExperiment",
-    results_df$fxn %in%
-      c("FetchData.AnnDataR6", "fetch_metadata.AnnDataR6") ~ "anndata",
-    TRUE ~ NA
-  )
-
-results_df$Function <- 
-  case_when(
-    results_df$fxn %in% 
-      c("FetchData.Seurat", 
-        "FetchData.SingleCellExperiment", 
-        "FetchData.AnnDataR6") ~ "FetchData",
-    results_df$fxn %in% 
-      c("fetch_metadata.Seurat",  
-        "fetch_metadata.SingleCellExperiment",
-        "fetch_metadata.AnnDataR6") ~ "fetch_metadata",
-    TRUE ~ NA
-  )
-
-# Re-factor object, function columns
-results_df$object <-
-  factor(
-    results_df$object,
-    levels = c("Seurat", "SingleCellExperiment", "anndata")
-  )
-
-results_df$Function <-
-  factor(
-    results_df$Function,
-    levels = c("FetchData", "fetch_metadata")
-  )
-
-
-# Convert number of cells to character
-results_df$n_cells <-
-  as.character(
-    # Extract from scientific notation with as.integer
-    as.integer(results_df$n_cells)
-    )
-
-results_df$n_cells <- 
-  factor(
-    results_df$n_cells,
-    levels = 
-      str_sort(
-        unique(results_df$n_cells), 
-        numeric = TRUE
-        )
-  )
-
-# Remove single outlier for SingleCellExperiment, FetchData, 10,000 cells
-results_df <- results_df[-113,] 
-
-# Plot
-fetchData_vs_fetch_metadata <-
-  results_df %>%
-  ggplot(data = ., aes(x = n_cells, y = run_time)) +
-  geom_boxplot(aes(color = Function)) +
-  facet_wrap(
-    ~ object,
-    scales = "free",
-    ncol = 1
-    ) +
-  scale_color_manual(
-    values = 
-      c("#0079FF", "#8C00FF"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
-    aesthetics = "color",
-    na.value = "grey50"
-    ) +
-  # labs(
-  #   title = "FetchData vs. fetch_metadata", 
-  #   #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
-  #   ) +
-  ylab("Run Time (s)") +
-  xlab("Number of Cells") +
-  theme(
-    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
-    plot.subtitle = element_text(hjust = 0.5),
-    #axis.title.y = element_blank(),
-    #axis.title.x = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  ) +
-  #coord_cartesian(ylim = c(0,0.5)) +
-  facet_theme
- 
-fetchData_vs_fetch_metadata
-```
-
-```{r}
-# Save box plot from above code chunk (version faceted by object)
-ggsave(
-  fetchData_vs_fetch_metadata,
-  filename = paste0(working_dir, "performance_results/FetchData_vs_FetchMetadata_3_free_scale_facet_by_object.png"),
-  device = "png",
-  width = 16,
-  height = 8,
-  bg = "#FFFFFF"
-  )
-```
-
-```{r FetchData vs. fetch_metadata lineplot}
-# results_df <- read.csv("SCUBA/performance_results/FetchData_vs_fetch_metadata_3.csv")
-# 
-# # Add information for object type and function based on `fxn` column
-# results_df$object <- 
-#   case_when(
-#     results_df$fxn %in% 
-#       c("FetchData.Seurat", "fetch_metadata.Seurat") ~ "Seurat",
-#     results_df$fxn %in% 
-#       c("FetchData.SingleCellExperiment", 
-#         "fetch_metadata.SingleCellExperiment") ~ "SingleCellExperiment",
-#     results_df$fxn %in%
-#       c("FetchData.AnnDataR6", "fetch_metadata.AnnDataR6") ~ "anndata",
-#     TRUE ~ NA
-#   )
-# 
-# results_df$Function <- 
-#   case_when(
-#     results_df$fxn %in% 
-#       c("FetchData.Seurat", 
-#         "FetchData.SingleCellExperiment", 
-#         "FetchData.AnnDataR6") ~ "FetchData",
-#     results_df$fxn %in% 
-#       c("fetch_metadata.Seurat",  
-#         "fetch_metadata.SingleCellExperiment",
-#         "fetch_metadata.AnnDataR6") ~ "fetch_metadata",
-#     TRUE ~ NA
-#   )
-# 
-# # Re-factor object, function columns
-# results_df$object <-
-#   factor(
-#     results_df$object,
-#     levels = c("Seurat", "SingleCellExperiment", "anndata")
-#   )
-# 
-# results_df$Function <-
-#   factor(
-#     results_df$Function,
-#     levels = c("FetchData", "fetch_metadata")
-#   )
-# 
-# 
-# # Convert number of cells to character
-# results_df$n_cells <-
-#   as.character(
-#     # Extract from scientific notation with as.integer
-#     as.integer(results_df$n_cells)
-#     )
-# 
-# results_df$n_cells <- 
-#   factor(
-#     results_df$n_cells,
-#     levels = 
-#       str_sort(
-#         unique(results_df$n_cells), 
-#         numeric = TRUE
-#         )
-#   )
-# 
-# # Remove single outlier for SingleCellExperiment, FetchData, 10,000 cells
-# results_df <- results_df[-113,] 
-# 
-# # Create summary stats for results
-# summary_df <-
-#   results_df |>
-#   group_by(Function, object, n_cells) |>
-#   summarize(
-#     mean_time = mean(run_time),
-#     sd = sd(run_time)
-#   )
-# 
-# line_plot <-
-#   ggplot(data = summary_df, aes(x = n_cells, y = mean_time, color = Function, group = Function)) +
-#   geom_point() +
-#   geom_line() +
-#   geom_errorbar(aes(ymin = mean_time - sd, ymax = mean_time + sd)) +
-#   scale_color_manual(
-#       values = c("#0079FF", "#8C00FF"),
-#       aesthetics = "color",
-#       na.value = "grey50"
-#       ) +
-#   facet_wrap(
-#     ~ object,
-#     ncol = 1,
-#     scales = "free"
-#   ) +
-#   # scale_y_continuous(
-#   #   limits = c(0, 9)
-#   # ) +
-#   # scale_y_continuous(
-#   #   breaks = seq(from = 0, to = 0.5, by = 0.05),
-#   #   limits = c(0, 0.5)#,
-#   #   #labels = function(breaks){paste0(breaks, " s")}
-#   #   ) +
-#   ylab("Time (s)") +
-#   xlab("Number of Cells") +
-#   labs(
-#     title = "FetchData vs. fetch_metadata",
-#     # subtitle =
-#     #   "(200k Cells x 29k Genes, HDF5Array Compression Level 3 for SCE objects)"
-#   ) +
-#   guides(
-#     color =
-#       guide_legend(
-#         title = NULL
-#         )
-#   ) +
-#   theme_cowplot() +
-#   theme(
-#     plot.title = element_text(hjust = 0.5, size = 18),
-#     plot.subtitle = element_text(hjust = 0.5),
-#     axis.text.x = element_text(size = 9)
-#     ) +
-#   facet_theme
-# 
-# line_plot
-```
-
-```{r}
-# Save line plot
-# ggsave(
-#   line_plot,
-#   filename = "SCUBA/performance_results/FetchData_vs_FetchMetadata_3_line_plot.png",
-#   device = "png",
-#   width = 16,
-#   height = 8,
-#   bg = "#FFFFFF"
-#   )
-```
-
-## fetchData on UMAP coordinates vs. fetch_reduction
+# fetchData on UMAP coordinates vs. fetch_reduction
 
 ```{r}
 #subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000)
@@ -1392,8 +837,6 @@ sce_trial <-
   )
 ```
 
-
-
 ```{r}
 #subset_sizes <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000)
 #trials <- 1:5
@@ -1489,16 +932,229 @@ write.csv(
 )
 ```
 
-## Box plot
+# Plot results of performance testing 
+
+Once the CSVs in above sections are created, only this section of the Rmd and the following one ("Combined Figure") needs to be ran. 
+
+```{r}
+# Define Paths to each results CSV
+fetchData_path <- 
+  paste0(
+     working_dir,
+     "performance_results/FetchData.csv"
+   )
+
+fetchdata_vs_fetchmetadata_path <-
+  paste0(
+     working_dir,
+     "performance_results/FetchData_vs_fetch_metadata_3.csv"
+   )
+
+fetchdata_vs_fetchreduction_path <-
+  paste0(
+     working_dir,
+     "performance_results/FetchData_vs_fetch_reduction.csv"
+   )
+
+# Palette used for SCUBA manuscript, fig1: Okabe-Ito palette, rearranged
+scuba_manuscript_pal <- palette.colors(palette = "Okabe-Ito")
+scuba_manuscript_pal <- scuba_manuscript_pal[c(6,7,4,2,3,8,1,5,9)]
+#show_col(scuba_manuscript_pal)
+```
+
+```{r fetchData plot}
+results_df <- read.csv(fetchData_path)
+
+# Rename function column lavels
+results_df$fxn <- 
+  plyr::revalue(
+    results_df$fxn, 
+    c("FetchData.Seurat" = "Seurat", 
+      "FetchData.SingleCellExperiment" = "SingleCellExperiment", 
+      "FetchData.AnnDataR6" = "anndata"
+      )
+    )
+
+# Re-factor
+results_df$fxn <- 
+  factor(
+    results_df$fxn, 
+    levels = 
+      c("Seurat",
+        "SingleCellExperiment",
+        "anndata"
+        )
+    )
+
+# Convert number of cells to character
+results_df$n_cells <-
+  as.character(
+    # Extract from scientific notation with as.integer
+    as.integer(results_df$n_cells)
+    )
+
+results_df$n_cells <- 
+  factor(
+    results_df$n_cells,
+    levels = 
+      as.character(
+        str_sort(
+          unique(results_df$n_cells), 
+          numeric = TRUE
+          )
+        )
+  )
+
+results_df <- results_df %>% rename(c("Method" = "fxn"))
+
+fetchData_comparison <- 
+  ggplot(data = results_df, aes(x = n_cells, y = run_time)) +
+  geom_boxplot(aes(color = Method), linewidth = 0.25, outlier.size = 0.25) +
+  scale_color_manual(
+    name = NULL,
+    values = scuba_manuscript_pal[c(9,1,3)],
+    aesthetics = "color",
+    na.value = "grey50"
+    ) +
+  # labs(
+  #   title = "FetchData with a Single Gene", 
+  #   #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
+  #   ) +
+  xlab("Number of cells") +
+  ylab("Run Time (s)") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    plot.subtitle = element_text(hjust = 0.5),
+    #axis.title.y = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1)#,
+    #legend.position = "bottom"
+  ) #+
+  #coord_flip()
+
+fetchData_comparison
+```
+
+```{r fetchData_vs_fetch_metadata_boxplot}
+results_df <- read.csv(fetchdata_vs_fetchmetadata_path)
+
+# Add information for object type and function based on `fxn` column
+results_df$object <- 
+  case_when(
+    results_df$fxn %in% 
+      c("FetchData.Seurat", "fetch_metadata.Seurat") ~ "Seurat",
+    results_df$fxn %in% 
+      c("FetchData.SingleCellExperiment", 
+        "fetch_metadata.SingleCellExperiment") ~ "SingleCellExperiment",
+    results_df$fxn %in%
+      c("FetchData.AnnDataR6", "fetch_metadata.AnnDataR6") ~ "anndata",
+    TRUE ~ NA
+  )
+
+results_df$Function <- 
+  case_when(
+    results_df$fxn %in% 
+      c("FetchData.Seurat", 
+        "FetchData.SingleCellExperiment", 
+        "FetchData.AnnDataR6") ~ "FetchData",
+    results_df$fxn %in% 
+      c("fetch_metadata.Seurat",  
+        "fetch_metadata.SingleCellExperiment",
+        "fetch_metadata.AnnDataR6") ~ "fetch_metadata",
+    TRUE ~ NA
+  )
+
+# Re-factor object, function columns
+results_df$object <-
+  factor(
+    results_df$object,
+    levels = c("Seurat", "SingleCellExperiment", "anndata")
+  )
+
+results_df$Function <-
+  factor(
+    results_df$Function,
+    levels = c("FetchData", "fetch_metadata")
+  )
+
+
+# Convert number of cells to character
+results_df$n_cells <-
+  as.character(
+    # Extract from scientific notation with as.integer
+    as.integer(results_df$n_cells)
+    )
+
+results_df$n_cells <- 
+  factor(
+    results_df$n_cells,
+    levels = 
+      str_sort(
+        unique(results_df$n_cells), 
+        numeric = TRUE
+        )
+  )
+
+# Remove single outlier for SingleCellExperiment, FetchData, 10,000 cells
+#results_df <- results_df[-113,] 
+
+# z-score results *by test and number of cells* and remove 
+# extreme outliers (>= 3 SD)
+# Create table with mean, SD for each fxn/n_cells combo
+scaling_df <- 
+  results_df %>% 
+    group_by(fxn, n_cells) %>% 
+    summarise(
+      mean = mean(run_time, na.rm = TRUE),
+      SD = sd(run_time, na.rm = TRUE)
+      )
+
+results_df <-
+  results_df %>% 
+  left_join(
+    .,
+    scaling_df,
+    by = c("fxn", "n_cells")
+  ) %>% 
+  dplyr::mutate(run_time_scaled = (run_time - mean)/SD)
+
+# Plot
+fetchData_vs_fetch_metadata <-
+  results_df %>%
+  ggplot(data = ., aes(x = n_cells, y = run_time)) +
+  geom_boxplot(aes(color = Function), linewidth = 0.25, outlier.size = 0.25) +
+  facet_wrap(
+    ~ object,
+    scales = "free",
+    ncol = 1
+    ) +
+  scale_color_manual(
+    name = NULL,
+    values = scuba_manuscript_pal[c(7,5)], # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
+    aesthetics = "color",
+    na.value = "grey50"
+    ) +
+  # labs(
+  #   title = "FetchData vs. fetch_metadata", 
+  #   #subtitle = "Assessed over 100 trials, on full AML dataset, with one feature"
+  #   ) +
+  ylab("Run Time (s)") +
+  xlab("Number of Cells") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    plot.subtitle = element_text(hjust = 0.5),
+    #axis.title.y = element_blank(),
+    #axis.title.x = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  #coord_cartesian(ylim = c(0,0.5)) +
+  facet_theme
+ 
+fetchData_vs_fetch_metadata
+```
 
 ```{r FetchData vs. fetch_reduction boxplot}
 results_df <- 
-  read.csv(
-    paste0(
-      working_dir,
-      "performance_results/FetchData_vs_fetch_reduction.csv"
-    )
-)
+  read.csv(fetchdata_vs_fetchreduction_path)
 
 # Add information for object type and function based on `fxn` column
 results_df$object <- 
@@ -1558,20 +1214,42 @@ results_df$n_cells <-
   )
 
 # Remove extreme outlier for SingleCellExperiment, fetch_reduction
-results_df <- results_df[-93,]
+#results_df <- results_df[-93,]
+
+# z-score results *by test and number of cells* and remove 
+# extreme outliers (>= 3 SD)
+# Create table with mean, SD for each fxn/n_cells combo
+scaling_df <- 
+  results_df %>% 
+    group_by(fxn, n_cells) %>% 
+    summarise(
+      mean = mean(run_time, na.rm = TRUE),
+      SD = sd(run_time, na.rm = TRUE)
+      )
+
+results_df <-
+  results_df %>% 
+  left_join(
+    .,
+    scaling_df,
+    by = c("fxn", "n_cells")
+  ) %>% 
+  dplyr::mutate(run_time_scaled = (run_time - mean)/SD)
+
 
 fetchdata_vs_fetch_reduction <-
   results_df %>%
   ggplot(data = ., aes(x = n_cells, y = run_time)) +
-  geom_boxplot(aes(color = Function)) +
+  geom_boxplot(aes(color = Function), linewidth = 0.25, outlier.size = 0.25) +
   facet_wrap(
     ~ object,
     scales = "free",
     ncol = 1
     ) +
   scale_color_manual(
-    values = 
-      c("#0079FF", "#E61A1A"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
+    name = NULL,
+    values = scuba_manuscript_pal[c(7,2)],
+      #c("#0079FF", "#E61A1A"), # #yellow "#F2AF0D", #orange "#F25E0D", #green "#59A662", #Red "#E61A1A"
     aesthetics = "color",
     na.value = "grey50"
     ) +
@@ -1594,65 +1272,57 @@ fetchdata_vs_fetch_reduction <-
 fetchdata_vs_fetch_reduction
 ```
 
-```{r}
-# Save box plot
-ggsave(
-  fetchdata_vs_fetch_reduction,
-  filename = paste0(
-    working_dir,
-    "performance_results/FetchData_vs_fetch_reduction.png"
-  ),
-  device = "png",
-  width = 16,
-  height = 8,
-  bg = "#FFFFFF"
-)
-```
-
-# Combined figure
+# Combined figure (Figure 4 in manuscript)
 
 ```{r}
 layout <- 
   c("
-    AAAA
-    BBCC
-    BBCC
+    AABB
+    AABB
+    CCCC
     ")
 
 combined_figure <-
   patchwork::wrap_plots(
+    fetchData_vs_fetch_metadata, #+ 
+      #theme(legend.position = "bottom"),
+    fetchdata_vs_fetch_reduction, #+
+      #theme(legend.position = "bottom"),
     fetchData_comparison,
-    fetchData_vs_fetch_metadata,
-    fetchdata_vs_fetch_reduction,
     design = layout,
     guides = "keep"
     ) +
     patchwork::plot_annotation(
         tag_levels = list(c("A", "B", "C"))
       ) &
-  theme(plot.tag = element_text(size = 24, face = "bold"))
+  theme(plot.tag = element_text(size = 12, face = "bold"))
 
-# PDF export
-pdf(file = paste0(working_dir, "performance_results/combined_performance.pdf"), width = 14, height = 16)
-combined_figure
-dev.off()
+combined_figure <-
+  combined_figure &
+    theme(
+      legend.text = element_text(size = 8),
+      legend.justification = "center",
+      axis.title = element_text(size = 9),
+      axis.text = element_text(size = 8),
+      strip.text = element_text(size = 9),
+      legend.position = "bottom"
+    )
 
-# SVG Export
-svglite::svglite(file = paste0(working_dir, "performance_results/combined_performance.svg"), width = 14, height = 16)
-combined_figure
-dev.off()
+mm_to_in <- 
+  function(mm){
+    mm/25.4
+  }
 
-# PNG export
-png(
-  file = paste0(working_dir, 
-                "performance_results/combined_performance.png"
-         ), 
-  width = 14, 
-  height = 16, 
-  units = "in", 
-  res = 300
+pdf(
+  file = 
+    paste0(
+      working_dir,
+      "performance_results/fig4.pdf"
+      ), 
+  width = mm_to_in(150), 
+  height = mm_to_in(275),
+  pointsize = 8
   )
 combined_figure
 dev.off()
 ```
-
