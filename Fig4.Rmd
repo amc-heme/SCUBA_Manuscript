@@ -185,7 +185,7 @@ anndata objects
 #subset_sizes <- 500000
 #trials <- 1:5
 
-# Generate SCE object from each .Rds object from above code block
+# Generate anndata object from each .Rds object from above code block
 for (subset_size in subset_sizes){
     for (i in trials){ 
         rds_path <- 
@@ -208,7 +208,7 @@ for (subset_size in subset_sizes){
          cat("\r")
         
         # Load Seurat object for the ith trial of the current subset size,
-        # and convert to an SCE object
+        # and convert to an anndata object
         sobj <-
           readRDS(
             rds_path
