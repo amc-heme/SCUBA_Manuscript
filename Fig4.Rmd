@@ -27,7 +27,6 @@ library(reticulate)
 library(dplyr)
 library(ggplot2)
 
-library(tictoc)
 library(cowplot)
 library(stringr)
 
@@ -50,7 +49,9 @@ facet_theme <-
     )
 
 # Path to a directory where files and directories for this analysis will be stored.
-working_dir <- "working_dir_path"
+working_dir <- ""
+  
+  #"working_dir_path"
 ```
 
 ```{r}
@@ -254,13 +255,14 @@ for (subset_size in subset_sizes){
 
 ```
 
-# Performance testing of FetchData
+# Performance testing of fetch_data
 
-The testing below replicates the results shown in **Figure 4C** of the manuscript. Data for one feature was retrieved from each of the subsets using FetchData, and the run time was measured via the `tictoc` package. The performance of the existing Seurat method was compared to the methods created by SCUBA for SingleCellExperiment and anndata objects.
+The testing below replicates the results shown in **Figure 4A** of the manuscript. Data for one feature was retrieved from each of the subsets using fetch_data, and the run time was measured via `sys.time`. For Seurat objects, SeuratObject::FetchData is performed as well as SCUBA::fetch_data, and the performance of each is compared. SCUBA::fetch_data is then ran on identical SingleCellExperiment and anndata objects to evaluate the performance of the new fetch_data methods for these object types.
 
 ```{r}
 times <- c()
 n_cells <- c()
+fxn <- c()
 
 # Seurat objects
 for (subset_size in subset_sizes){
@@ -279,7 +281,7 @@ for (subset_size in subset_sizes){
             )
           )
         
-        # Run FetchData and time run with Sys.time()
+        # Run SeuratObject::FetchData and time run with Sys.time()
         start_time <- Sys.time()
         
         FetchData(
@@ -299,7 +301,30 @@ for (subset_size in subset_sizes){
         times <- c(times, time_i)
         # Also store the number of cells associated with the current trial
         n_cells <- c(n_cells, subset_size)
-        # Carriage return, to avoid cluttering output during testing
+        # Store the function name for the trial
+        fxn <- c(fxn, "FetchData.Seurat")
+        
+        # Run SCUBA::fetch_data
+        start_time <- Sys.time()
+        
+        SCUBA::fetch_data(
+          subset,
+          vars = c("ENSG00000078399")
+        )
+        
+        end_time <- Sys.time()
+        
+        # Compute time elapsed with difftime and append to vector of times
+        time_i <- as.numeric(difftime(end_time, start_time, units = 'secs'))
+        
+        times <- c(times, time_i)
+        # Also store the number of cells associated with the current trial
+        n_cells <- c(n_cells, subset_size)
+        # Store the function name for the trial
+        fxn <- c(fxn, "fetch_data.Seurat")
+        
+        # Display for subset size: add carrage return before next subset,
+        # to avoid cluttering output during testing
         cat("\r")
     }
 }
@@ -309,8 +334,6 @@ seurat_trial <-
     `n_cells` = n_cells,
     `run_time` = times
     )
-
-seurat_trial$fxn <- "FetchData.Seurat"
 ```
 
 ```{r}
@@ -337,7 +360,7 @@ for (subset_size in subset_sizes){
         # Run FetchData and time run with Sys.time()
         start_time <- Sys.time()
         
-        FetchData(
+        SCUBA::fetch_data(
             subset, 
             vars = c("ENSG00000078399")
             )
@@ -361,7 +384,7 @@ sce_trial <-
     `run_time` = times
   )
 
-sce_trial$fxn <- "FetchData.SingleCellExperiment"
+sce_trial$fxn <- "fetch_data.SingleCellExperiment"
 ```
 
 ```{r}
@@ -415,7 +438,7 @@ anndata_trial <-
     `run_time` = times
     )
 
-anndata_trial$fxn <- "FetchData.AnnDataR6"
+anndata_trial$fxn <- "fetch_data.AnnDataR6"
 
 ```
 
@@ -425,11 +448,11 @@ fetchdata_results <- rbind(seurat_trial, sce_trial, anndata_trial)
 
 results_dir <- paste0(working_dir, "performance_results/")
 
-if(!dir.exists(results_dir)) dir.create(results_dir)
+if (!dir.exists(results_dir)) dir.create(results_dir)
 
 write.csv(
   fetchdata_results, 
-  file = paste0(working_dir, "performance_results/FetchData.csv"), 
+  file = paste0(working_dir, "performance_results/fetch_data.csv"), 
   row.names = FALSE
 )
 ```
@@ -466,7 +489,7 @@ for (subset_size in subset_sizes){
         # Run FetchData and time run with Sys.time()
         start_time <- Sys.time()
         
-        FetchData(
+        SCUBA::fetch_data(
             subset, 
             vars = c("cell_type")
             )
@@ -480,7 +503,7 @@ for (subset_size in subset_sizes){
         # Also store the number of cells associated with the current trial,
         # and the function ran 
         n_cells <- c(n_cells, subset_size)
-        fxn <- c(fxn, "FetchData.Seurat")
+        fxn <- c(fxn, "fetch_data.Seurat")
         
         start_time <- Sys.time()
         
@@ -541,7 +564,7 @@ for (subset_size in subset_sizes){
         # Run FetchData and time run with Sys.time()
         start_time <- Sys.time()
         
-        FetchData(
+        SCUBA::fetch_data(
             subset, 
             vars = c("cell_type")
             )
@@ -555,7 +578,7 @@ for (subset_size in subset_sizes){
         #  Also store the number of cells associated with the current trial,
         # and the function ran 
         n_cells <- c(n_cells, subset_size)
-        fxn <- c(fxn, "FetchData.SingleCellExperiment")
+        fxn <- c(fxn, "fetch_data.SingleCellExperiment")
         
         start_time <- Sys.time()
         
@@ -616,7 +639,7 @@ for (subset_size in subset_sizes){
         # Run FetchData and time run with Sys.time()
         start_time <- Sys.time()
         
-        FetchData(
+        SCUBA::fetch_data(
             subset, 
             vars = c("cell_type")
             )
@@ -680,7 +703,7 @@ write.csv(
   fetchdata_vs_fetchmetadata_results,
   file = paste0(
     working_dir,
-    "performance_results/FetchData_vs_fetch_metadata_3.csv"
+    "performance_results/fetch_data_vs_fetch_metadata.csv"
   ),
   row.names = FALSE
 )
@@ -718,7 +741,7 @@ for (subset_size in subset_sizes){
         # Run FetchData and time run with Sys.time()
         start_time <- Sys.time()
         
-        FetchData(
+        SCUBA::fetch_data(
             subset, 
             vars = c("UMAP_1", "UMAP_2")
             )
@@ -794,7 +817,7 @@ for (subset_size in subset_sizes){
         # Run FetchData and time run with Sys.time()
         start_time <- Sys.time()
         
-        FetchData(
+        SCUBA::fetch_data(
             subset, 
             vars = c("UMAP_1", "UMAP_2")
             )
@@ -808,7 +831,7 @@ for (subset_size in subset_sizes){
         #  Also store the number of cells associated with the current trial,
         # and the function ran 
         n_cells <- c(n_cells, subset_size)
-        fxn <- c(fxn, "FetchData.SingleCellExperiment")
+        fxn <- c(fxn, "fetch_data.SingleCellExperiment")
         
         start_time <- Sys.time()
         
@@ -870,7 +893,7 @@ for (subset_size in subset_sizes){
         # Run FetchData and time run with Sys.time()
         start_time <- Sys.time()
         
-        FetchData(
+        SCUBA::fetch_data(
             subset, 
             vars = c("X_umap_1", "X_umap_2")
             )
@@ -884,7 +907,7 @@ for (subset_size in subset_sizes){
         #  Also store the number of cells associated with the current trial,
         # and the function ran 
         n_cells <- c(n_cells, subset_size)
-        fxn <- c(fxn, "FetchData.AnnDataR6")
+        fxn <- c(fxn, "fetch_data.AnnDataR6")
         
         start_time <- Sys.time()
         
@@ -930,7 +953,7 @@ write.csv(
    fetchdata_vs_fetchreduction_results,
    file = paste0(
      working_dir,
-     "performance_results/FetchData_vs_fetch_reduction.csv"
+     "performance_results/fetch_data_vs_fetch_reduction.csv"
    ),
    row.names = FALSE
 )
@@ -945,19 +968,19 @@ Once the CSVs in above sections are created, only this section of the Rmd and th
 fetchData_path <- 
   paste0(
      working_dir,
-     "performance_results/FetchData.csv"
+     "performance_results/fetch_data.csv"
    )
 
 fetchdata_vs_fetchmetadata_path <-
   paste0(
      working_dir,
-     "performance_results/FetchData_vs_fetch_metadata_3.csv"
+     "performance_results/fetch_data_vs_fetch_metadata.csv"
    )
 
 fetchdata_vs_fetchreduction_path <-
   paste0(
      working_dir,
-     "performance_results/FetchData_vs_fetch_reduction.csv"
+     "performance_results/fetch_data_vs_fetch_reduction.csv"
    )
 
 # Palette used for SCUBA manuscript, fig1: Okabe-Ito palette, rearranged
