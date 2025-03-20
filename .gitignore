@@ -9,3 +9,5 @@
 *.svg
 temp.Rmd
 .DS_Store
+random_subsets*
+performance_results/*
