@@ -276,8 +276,8 @@ To demonstrate the input flexibility of SCUBA, the downsampled dataset was conve
 
 ```{r}
 # Convert object to SCE format
-AML_sce <- as.SingleCellExperiment(AML_Seurat, assay = "RNA")
-AML_sce_ab <- as.SingleCellExperiment(AML_Seurat, assay = "AB")
+AML_sce <- Seurat::as.SingleCellExperiment(AML_Seurat, assay = "RNA")
+AML_sce_ab <- Seurat::as.SingleCellExperiment(AML_Seurat, assay = "AB")
 
 altExps(AML_sce) <- list("AB" = AML_sce_ab)
 
@@ -314,7 +314,7 @@ AB_modality <-
       main_layer = "data",
       assay = "AB",
       drop_single_values = FALSE
-    )
+      )
 
 # Append the object created for the AB modality as a matrix
 # By convention, additional modalities are stored in the obsm slot.
